@@ -3,6 +3,7 @@ import json
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 
+from app.admin_security import require_admin_key
 from app.config import settings
 from app.connectors.shopify import (
     mock_shopify_order_to_standard,
@@ -37,6 +38,7 @@ def health_check():
 @app.get("/orders/recent")
 def recent_orders(
     limit: int = Query(default=20, ge=1, le=100),
+    _: bool = Depends(require_admin_key),
     db: Session = Depends(get_db),
 ):
     return {
@@ -66,6 +68,7 @@ def test_send_detrack(
 @app.post("/orders/retry-failed/{order_sync_id}")
 def retry_failed_order(
     order_sync_id: int,
+    _: bool = Depends(require_admin_key),
     db: Session = Depends(get_db),
 ):
     result = retry_failed_detrack_sync(db, order_sync_id)
@@ -74,6 +77,7 @@ def retry_failed_order(
 
 @app.post("/connectors/shopify/test")
 def test_shopify_connector(
+    _: bool = Depends(require_admin_key),
     db: Session = Depends(get_db),
 ):
     order = mock_shopify_order_to_standard()
@@ -83,6 +87,7 @@ def test_shopify_connector(
 
 @app.post("/connectors/shopee/test")
 def test_shopee_connector(
+    _: bool = Depends(require_admin_key),
     db: Session = Depends(get_db),
 ):
     order = mock_shopee_order_to_standard()
@@ -92,6 +97,7 @@ def test_shopee_connector(
 
 @app.post("/connectors/tiktok-shop/test")
 def test_tiktok_shop_connector(
+    _: bool = Depends(require_admin_key),
     db: Session = Depends(get_db),
 ):
     order = mock_tiktok_shop_order_to_standard()

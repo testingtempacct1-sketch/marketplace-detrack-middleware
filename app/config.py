@@ -10,6 +10,8 @@ class Settings(BaseSettings):
 
     shopify_webhook_secret: str = ""
 
+    admin_api_key: str = ""
+
     class Config:
         env_file = ".env"
 
