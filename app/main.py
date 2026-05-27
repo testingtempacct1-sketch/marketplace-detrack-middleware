@@ -1,8 +1,13 @@
-from fastapi import Depends, FastAPI
+import json
+
+from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from sqlalchemy.orm import Session
 
 from app.config import settings
-from app.connectors.shopify import mock_shopify_order_to_standard
+from app.connectors.shopify import (
+    mock_shopify_order_to_standard,
+    shopify_order_to_standard,
+)
 from app.connectors.shopee import mock_shopee_order_to_standard
 from app.connectors.tiktok_shop import mock_tiktok_shop_order_to_standard
 from app.database import Base, engine, get_db
@@ -12,6 +17,7 @@ from app.sync_service import (
     create_order_and_send_to_detrack,
     retry_failed_detrack_sync,
 )
+from app.webhook_security import verify_shopify_hmac
 
 
 Base.metadata.create_all(bind=engine)
@@ -79,3 +85,38 @@ def test_tiktok_shop_connector(
     order = mock_tiktok_shop_order_to_standard()
     result = create_order_and_send_to_detrack(db, order)
     return result
+
+
+@app.post("/webhooks/shopify/orders-create")
+async def shopify_orders_create_webhook(
+    request: Request,
+    x_shopify_hmac_sha256: str | None = Header(default=None),
+    x_shopify_topic: str | None = Header(default=None),
+    x_shopify_shop_domain: str | None = Header(default=None),
+    db: Session = Depends(get_db),
+):
+    raw_body = await request.body()
+
+    is_valid = verify_shopify_hmac(
+        raw_body=raw_body,
+        received_hmac=x_shopify_hmac_sha256,
+        secret=settings.shopify_webhook_secret,
+    )
+
+    if not is_valid:
+        raise HTTPException(status_code=401, detail="Invalid Shopify webhook signature")
+
+    try:
+        payload = json.loads(raw_body.decode("utf-8"))
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status_code=400, detail="Invalid JSON payload") from exc
+
+    order = shopify_order_to_standard(payload)
+    result = create_order_and_send_to_detrack(db, order)
+
+    return {
+        "received": True,
+        "topic": x_shopify_topic,
+        "shop": x_shopify_shop_domain,
+        "result": result,
+    }

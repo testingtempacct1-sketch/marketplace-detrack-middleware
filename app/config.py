@@ -6,7 +6,9 @@ class Settings(BaseSettings):
     database_url: str = "sqlite:///./middleware.db"
 
     detrack_api_key: str = ""
-    detrack_base_url: str = "https://app.detrack.com/api/v2"
+    detrack_base_url: str = "https://app.detrack.com/api/v2/jobs"
+
+    shopify_webhook_secret: str = ""
 
     class Config:
         env_file = ".env"
