@@ -1,4 +1,5 @@
 import json
+from datetime import datetime
 
 from sqlalchemy.orm import Session
 
@@ -56,6 +57,125 @@ def _order_sync_to_dict(order_sync: OrderSync) -> dict:
         "delivery_date": order_sync.delivery_date,
         "created_at": order_sync.created_at.isoformat() if order_sync.created_at else None,
         "updated_at": order_sync.updated_at.isoformat() if order_sync.updated_at else None,
+    }
+
+
+def _get_nested(payload: dict, *paths: tuple[str, ...]):
+    for path in paths:
+        current = payload
+        for key in path:
+            if not isinstance(current, dict):
+                current = None
+                break
+            current = current.get(key)
+        if current not in (None, ""):
+            return current
+    return None
+
+
+def extract_detrack_webhook_info(payload: dict) -> dict:
+    do_number = _get_nested(
+        payload,
+        ("do_number",),
+        ("data", "do_number"),
+        ("job", "do_number"),
+        ("delivery", "do_number"),
+        ("tracking", "do_number"),
+    )
+
+    job_id = _get_nested(
+        payload,
+        ("id",),
+        ("job_id",),
+        ("delivery_id",),
+        ("data", "id"),
+        ("data", "job_id"),
+        ("data", "delivery_id"),
+        ("job", "id"),
+        ("delivery", "id"),
+    )
+
+    status = _get_nested(
+        payload,
+        ("status",),
+        ("delivery_status",),
+        ("job_status",),
+        ("tracking_status",),
+        ("data", "status"),
+        ("data", "delivery_status"),
+        ("data", "job_status"),
+        ("job", "status"),
+        ("delivery", "status"),
+    )
+
+    reason = _get_nested(
+        payload,
+        ("reason",),
+        ("failed_reason",),
+        ("failure_reason",),
+        ("data", "reason"),
+        ("data", "failed_reason"),
+        ("delivery", "reason"),
+    )
+
+    return {
+        "do_number": str(do_number) if do_number is not None else None,
+        "job_id": str(job_id) if job_id is not None else None,
+        "status": str(status) if status is not None else "unknown",
+        "reason": str(reason) if reason is not None else None,
+    }
+
+
+def update_delivery_status_from_detrack(db: Session, payload: dict) -> dict:
+    info = extract_detrack_webhook_info(payload)
+
+    do_number = info["do_number"]
+    job_id = info["job_id"]
+    status = info["status"]
+    reason = info["reason"]
+
+    query = db.query(OrderSync)
+
+    order_sync = None
+
+    if do_number:
+        order_sync = query.filter(OrderSync.detrack_do_number == do_number).first()
+
+    if not order_sync and job_id:
+        order_sync = query.filter(OrderSync.detrack_job_id == job_id).first()
+
+    if not order_sync:
+        return {
+            "updated": False,
+            "message": "No matching order sync record found for Detrack webhook.",
+            "matched_by": None,
+            "received": info,
+        }
+
+    previous_status = order_sync.delivery_status
+
+    order_sync.delivery_status = status
+    order_sync.error_message = None if not reason else f"Detrack status reason: {reason}"
+    order_sync.updated_at = datetime.utcnow()
+
+    if job_id and not order_sync.detrack_job_id:
+        order_sync.detrack_job_id = job_id
+
+    db.commit()
+    db.refresh(order_sync)
+
+    matched_by = "detrack_do_number" if do_number else "detrack_job_id"
+
+    return {
+        "updated": True,
+        "message": "Delivery status updated from Detrack webhook.",
+        "matched_by": matched_by,
+        "order_sync_id": order_sync.id,
+        "detrack_do_number": order_sync.detrack_do_number,
+        "detrack_job_id": order_sync.detrack_job_id,
+        "previous_delivery_status": previous_status,
+        "new_delivery_status": order_sync.delivery_status,
+        "received": info,
     }
 
 
@@ -164,6 +284,7 @@ def create_order_and_send_to_detrack(db: Session, order: StandardOrder) -> dict:
         order_sync.sync_status = "sent_to_detrack"
         order_sync.delivery_status = "created"
         order_sync.error_message = None
+        order_sync.updated_at = datetime.utcnow()
 
         data = detrack_response.get("data") or detrack_response
         if isinstance(data, dict):
@@ -191,6 +312,7 @@ def create_order_and_send_to_detrack(db: Session, order: StandardOrder) -> dict:
     except DetrackAPIError as exc:
         order_sync.sync_status = "detrack_failed"
         order_sync.error_message = str(exc)
+        order_sync.updated_at = datetime.utcnow()
         db.commit()
 
         return {
@@ -250,6 +372,7 @@ def retry_failed_detrack_sync(db: Session, order_sync_id: int) -> dict:
         order_sync.delivery_status = "created"
         order_sync.error_message = None
         order_sync.detrack_do_number = detrack_payload["data"]["do_number"]
+        order_sync.updated_at = datetime.utcnow()
 
         data = detrack_response.get("data") or detrack_response
         if isinstance(data, dict):
@@ -277,6 +400,7 @@ def retry_failed_detrack_sync(db: Session, order_sync_id: int) -> dict:
     except DetrackAPIError as exc:
         order_sync.sync_status = "detrack_failed"
         order_sync.error_message = str(exc)
+        order_sync.updated_at = datetime.utcnow()
         db.commit()
 
         return {

@@ -1,9 +1,10 @@
 import json
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
+from fastapi import Body, Depends, FastAPI, Header, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 
 from app.admin_security import require_admin_key
+from app.detrack_webhook_security import require_detrack_webhook_key
 from app.config import settings
 from app.connectors.shopify import (
     mock_shopify_order_to_standard,
@@ -18,6 +19,7 @@ from app.sync_service import (
     create_order_and_send_to_detrack,
     list_recent_order_syncs,
     retry_failed_detrack_sync,
+    update_delivery_status_from_detrack,
 )
 from app.webhook_security import verify_shopify_hmac
 
@@ -103,6 +105,19 @@ def test_tiktok_shop_connector(
     order = mock_tiktok_shop_order_to_standard()
     result = create_order_and_send_to_detrack(db, order)
     return result
+
+@app.post("/webhooks/detrack/job-status")
+def detrack_job_status_webhook(
+    payload: dict = Body(...),
+    _: bool = Depends(require_detrack_webhook_key),
+    db: Session = Depends(get_db),
+):
+    result = update_delivery_status_from_detrack(db, payload)
+
+    return {
+        "received": True,
+        "result": result,
+    }
 
 
 @app.post("/webhooks/shopify/orders-create")

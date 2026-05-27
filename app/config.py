@@ -7,6 +7,7 @@ class Settings(BaseSettings):
 
     detrack_api_key: str = ""
     detrack_base_url: str = "https://app.detrack.com/api/v2/jobs"
+    detrack_webhook_secret: str = ""
 
     shopify_webhook_secret: str = ""
 
