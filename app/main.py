@@ -4,7 +4,10 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.database import Base, engine, get_db
 from app.schemas import StandardOrder
-from app.sync_service import create_or_get_order_sync
+from app.sync_service import (
+    create_or_get_order_sync,
+    create_order_and_send_to_detrack,
+)
 
 
 Base.metadata.create_all(bind=engine)
@@ -26,4 +29,13 @@ def test_standard_order(
     db: Session = Depends(get_db),
 ):
     result = create_or_get_order_sync(db, order)
+    return result
+
+
+@app.post("/orders/test-send-detrack")
+def test_send_detrack(
+    order: StandardOrder,
+    db: Session = Depends(get_db),
+):
+    result = create_order_and_send_to_detrack(db, order)
     return result
