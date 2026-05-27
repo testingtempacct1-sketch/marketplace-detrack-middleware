@@ -38,6 +38,40 @@ def _items_from_json(items_json: str | None) -> list[StandardOrderItem]:
         ]
 
 
+def _order_sync_to_dict(order_sync: OrderSync) -> dict:
+    return {
+        "id": order_sync.id,
+        "source": order_sync.source,
+        "source_order_id": order_sync.source_order_id,
+        "customer_name": order_sync.customer_name,
+        "phone": order_sync.phone,
+        "address": order_sync.address,
+        "postal_code": order_sync.postal_code,
+        "detrack_do_number": order_sync.detrack_do_number,
+        "detrack_job_id": order_sync.detrack_job_id,
+        "sync_status": order_sync.sync_status,
+        "delivery_status": order_sync.delivery_status,
+        "error_message": order_sync.error_message,
+        "remarks": order_sync.remarks,
+        "delivery_date": order_sync.delivery_date,
+        "created_at": order_sync.created_at.isoformat() if order_sync.created_at else None,
+        "updated_at": order_sync.updated_at.isoformat() if order_sync.updated_at else None,
+    }
+
+
+def list_recent_order_syncs(db: Session, limit: int = 20) -> list[dict]:
+    safe_limit = max(1, min(limit, 100))
+
+    records = (
+        db.query(OrderSync)
+        .order_by(OrderSync.id.desc())
+        .limit(safe_limit)
+        .all()
+    )
+
+    return [_order_sync_to_dict(record) for record in records]
+
+
 def create_or_get_order_sync(db: Session, order: StandardOrder) -> dict:
     existing = (
         db.query(OrderSync)

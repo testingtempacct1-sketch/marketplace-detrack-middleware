@@ -1,6 +1,6 @@
 import json
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Request
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -15,6 +15,7 @@ from app.schemas import StandardOrder
 from app.sync_service import (
     create_or_get_order_sync,
     create_order_and_send_to_detrack,
+    list_recent_order_syncs,
     retry_failed_detrack_sync,
 )
 from app.webhook_security import verify_shopify_hmac
@@ -30,6 +31,17 @@ def health_check():
     return {
         "status": "ok",
         "service": settings.app_name,
+    }
+
+
+@app.get("/orders/recent")
+def recent_orders(
+    limit: int = Query(default=20, ge=1, le=100),
+    db: Session = Depends(get_db),
+):
+    return {
+        "count": limit,
+        "orders": list_recent_order_syncs(db, limit=limit),
     }
 
 
