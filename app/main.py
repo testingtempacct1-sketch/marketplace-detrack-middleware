@@ -7,6 +7,7 @@ from app.schemas import StandardOrder
 from app.sync_service import (
     create_or_get_order_sync,
     create_order_and_send_to_detrack,
+    retry_failed_detrack_sync,
 )
 
 
@@ -38,4 +39,13 @@ def test_send_detrack(
     db: Session = Depends(get_db),
 ):
     result = create_order_and_send_to_detrack(db, order)
+    return result
+
+
+@app.post("/orders/retry-failed/{order_sync_id}")
+def retry_failed_order(
+    order_sync_id: int,
+    db: Session = Depends(get_db),
+):
+    result = retry_failed_detrack_sync(db, order_sync_id)
     return result
