@@ -1,9 +1,41 @@
+import json
+
 from sqlalchemy.orm import Session
 
 from app.detrack_client import DetrackAPIError, create_detrack_job
 from app.mapper import map_standard_order_to_detrack
 from app.models import OrderSync
 from app.schemas import StandardOrder, StandardOrderItem
+
+
+def _items_to_json(order: StandardOrder) -> str:
+    return json.dumps(
+        [item.model_dump() for item in order.items],
+        ensure_ascii=False,
+    )
+
+
+def _items_from_json(items_json: str | None) -> list[StandardOrderItem]:
+    if not items_json:
+        return [
+            StandardOrderItem(
+                name="Order items from marketplace",
+                quantity=1,
+                sku=None,
+            )
+        ]
+
+    try:
+        raw_items = json.loads(items_json)
+        return [StandardOrderItem(**item) for item in raw_items]
+    except Exception:
+        return [
+            StandardOrderItem(
+                name="Order items from marketplace",
+                quantity=1,
+                sku=None,
+            )
+        ]
 
 
 def create_or_get_order_sync(db: Session, order: StandardOrder) -> dict:
@@ -32,6 +64,9 @@ def create_or_get_order_sync(db: Session, order: StandardOrder) -> dict:
         phone=order.phone,
         address=order.address,
         postal_code=order.postal_code,
+        items_json=_items_to_json(order),
+        remarks=order.remarks,
+        delivery_date=order.delivery_date,
         detrack_do_number=f"{order.source.upper()}-{order.source_order_id}",
         sync_status="pending",
     )
@@ -78,6 +113,9 @@ def create_order_and_send_to_detrack(db: Session, order: StandardOrder) -> dict:
         phone=order.phone,
         address=order.address,
         postal_code=order.postal_code,
+        items_json=_items_to_json(order),
+        remarks=order.remarks,
+        delivery_date=order.delivery_date,
         detrack_do_number=detrack_payload["data"]["do_number"],
         sync_status="pending",
     )
@@ -157,8 +195,6 @@ def retry_failed_detrack_sync(db: Session, order_sync_id: int) -> dict:
             "detrack_job_id": order_sync.detrack_job_id,
         }
 
-    # For now, retry with a simple reconstructed order.
-    # Later, when we store item JSON properly, this can rebuild full item details.
     reconstructed_order = StandardOrder(
         source=order_sync.source,
         source_order_id=order_sync.source_order_id,
@@ -166,15 +202,9 @@ def retry_failed_detrack_sync(db: Session, order_sync_id: int) -> dict:
         phone=order_sync.phone or "",
         address=order_sync.address or "",
         postal_code=order_sync.postal_code,
-        items=[
-            StandardOrderItem(
-                name="Order items from marketplace",
-                quantity=1,
-                sku=None,
-            )
-        ],
-        remarks="Retried from middleware failed sync.",
-        delivery_date=None,
+        items=_items_from_json(order_sync.items_json),
+        remarks=order_sync.remarks or "Retried from middleware failed sync.",
+        delivery_date=order_sync.delivery_date,
     )
 
     detrack_payload = map_standard_order_to_detrack(reconstructed_order)

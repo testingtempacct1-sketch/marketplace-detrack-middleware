@@ -18,6 +18,10 @@ class OrderSync(Base):
     address = Column(Text, nullable=True)
     postal_code = Column(String(20), nullable=True)
 
+    items_json = Column(Text, nullable=True)
+    remarks = Column(Text, nullable=True)
+    delivery_date = Column(String(20), nullable=True)
+
     detrack_job_id = Column(String(100), nullable=True)
     detrack_do_number = Column(String(100), nullable=True)
 
@@ -28,6 +32,6 @@ class OrderSync(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow)
 
-    table_args = (
+    __table_args__ = (
         UniqueConstraint("source", "source_order_id", name="uq_source_order"),
     )
