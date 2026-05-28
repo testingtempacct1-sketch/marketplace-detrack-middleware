@@ -198,12 +198,21 @@ def update_delivery_status_from_detrack(db: Session, payload: dict) -> dict:
                 tracking_url=None,
                 notify_customer=False,
             )
+
+            order_sync.error_message = (
+                "Shopify fulfilment attempt: "
+                f"created={shopify_fulfilment_result.get('created')}, "
+                f"would_call_shopify={shopify_fulfilment_result.get('would_call_shopify')}, "
+                f"blocked_by={shopify_fulfilment_result.get('blocked_by')}"
+            )
+
         except ShopifyAdminAPIError as exc:
             shopify_fulfilment_result = {
                 "created": False,
                 "error": str(exc),
                 "message": "Shopify fulfilment attempt failed.",
             }
+            order_sync.error_message = f"Shopify fulfilment failed: {exc}"
 
     db.commit()
     db.refresh(order_sync)
