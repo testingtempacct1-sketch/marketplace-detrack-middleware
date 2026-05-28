@@ -22,9 +22,12 @@ from app.sync_service import (
     update_delivery_status_from_detrack,
 )
 from app.webhook_security import verify_shopify_hmac
+from app.db_maintenance import ensure_order_sync_schema
 
 
 Base.metadata.create_all(bind=engine)
+ensure_order_sync_schema()
+
 
 app = FastAPI(title=settings.app_name)
 

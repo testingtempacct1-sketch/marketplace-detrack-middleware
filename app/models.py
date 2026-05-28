@@ -12,6 +12,10 @@ class OrderSync(Base):
 
     source = Column(String(50), nullable=False)
     source_order_id = Column(String(100), nullable=False)
+    shopify_order_id = Column(String(100), nullable=True)
+    shopify_order_name = Column(String(100), nullable=True)
+    shopify_order_admin_url = Column(String(255), nullable=True)
+
 
     customer_name = Column(String(255), nullable=True)
     phone = Column(String(50), nullable=True)

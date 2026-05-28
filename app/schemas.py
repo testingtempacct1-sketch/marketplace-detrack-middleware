@@ -10,15 +10,13 @@ class StandardOrderItem(BaseModel):
 
 
 class StandardOrder(BaseModel):
-    source: str = Field(..., examples=["shopify", "shopee", "tiktok_shop"])
+    source: str
     source_order_id: str
-
+    source_order_name: str | None = None
     customer_name: str
     phone: str
     address: str
-    postal_code: Optional[str] = None
-
-    items: List[StandardOrderItem]
-
-    remarks: Optional[str] = None
-    delivery_date: Optional[str] = None
+    postal_code: str | None = None
+    items: list[StandardOrderItem]
+    remarks: str | None = None
+    delivery_date: str | None = None

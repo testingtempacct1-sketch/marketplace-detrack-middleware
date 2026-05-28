@@ -58,6 +58,7 @@ def mock_shopify_order_to_standard() -> StandardOrder:
     return StandardOrder(
         source="shopify_online_store",
         source_order_id="SHOPIFY-TEST-001",
+        source_order_name=order_name,
         customer_name="Shopify Customer",
         phone="91234567",
         address="10 Orchard Road, Singapore",

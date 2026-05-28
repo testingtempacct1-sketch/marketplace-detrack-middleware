@@ -39,11 +39,29 @@ def _items_from_json(items_json: str | None) -> list[StandardOrderItem]:
         ]
 
 
+def _shopify_fields(order: StandardOrder) -> dict:
+    if not order.source.startswith("shopify"):
+        return {
+            "shopify_order_id": None,
+            "shopify_order_name": None,
+            "shopify_order_admin_url": None,
+        }
+
+    return {
+        "shopify_order_id": order.source_order_id,
+        "shopify_order_name": order.source_order_name,
+        "shopify_order_admin_url": None,
+    }
+
+
 def _order_sync_to_dict(order_sync: OrderSync) -> dict:
     return {
         "id": order_sync.id,
         "source": order_sync.source,
         "source_order_id": order_sync.source_order_id,
+        "shopify_order_id": order_sync.shopify_order_id,
+        "shopify_order_name": order_sync.shopify_order_name,
+        "shopify_order_admin_url": order_sync.shopify_order_admin_url,
         "customer_name": order_sync.customer_name,
         "phone": order_sync.phone,
         "address": order_sync.address,
@@ -68,8 +86,10 @@ def _get_nested(payload: dict, *paths: tuple[str, ...]):
                 current = None
                 break
             current = current.get(key)
+
         if current not in (None, ""):
             return current
+
     return None
 
 
@@ -134,15 +154,21 @@ def update_delivery_status_from_detrack(db: Session, payload: dict) -> dict:
     status = info["status"]
     reason = info["reason"]
 
-    query = db.query(OrderSync)
-
     order_sync = None
 
     if do_number:
-        order_sync = query.filter(OrderSync.detrack_do_number == do_number).first()
+        order_sync = (
+            db.query(OrderSync)
+            .filter(OrderSync.detrack_do_number == do_number)
+            .first()
+        )
 
     if not order_sync and job_id:
-        order_sync = query.filter(OrderSync.detrack_job_id == job_id).first()
+        order_sync = (
+            db.query(OrderSync)
+            .filter(OrderSync.detrack_job_id == job_id)
+            .first()
+        )
 
     if not order_sync:
         return {
@@ -211,9 +237,14 @@ def create_or_get_order_sync(db: Session, order: StandardOrder) -> dict:
             "detrack_payload": map_standard_order_to_detrack(order),
         }
 
+    shopify_fields = _shopify_fields(order)
+
     order_sync = OrderSync(
         source=order.source,
         source_order_id=order.source_order_id,
+        shopify_order_id=shopify_fields["shopify_order_id"],
+        shopify_order_name=shopify_fields["shopify_order_name"],
+        shopify_order_admin_url=shopify_fields["shopify_order_admin_url"],
         customer_name=order.customer_name,
         phone=order.phone,
         address=order.address,
@@ -259,10 +290,14 @@ def create_order_and_send_to_detrack(db: Session, order: StandardOrder) -> dict:
         }
 
     detrack_payload = map_standard_order_to_detrack(order)
+    shopify_fields = _shopify_fields(order)
 
     order_sync = OrderSync(
         source=order.source,
         source_order_id=order.source_order_id,
+        shopify_order_id=shopify_fields["shopify_order_id"],
+        shopify_order_name=shopify_fields["shopify_order_name"],
+        shopify_order_admin_url=shopify_fields["shopify_order_admin_url"],
         customer_name=order.customer_name,
         phone=order.phone,
         address=order.address,
@@ -354,6 +389,7 @@ def retry_failed_detrack_sync(db: Session, order_sync_id: int) -> dict:
     reconstructed_order = StandardOrder(
         source=order_sync.source,
         source_order_id=order_sync.source_order_id,
+        source_order_name=order_sync.shopify_order_name,
         customer_name=order_sync.customer_name or "Unknown Customer",
         phone=order_sync.phone or "",
         address=order_sync.address or "",
