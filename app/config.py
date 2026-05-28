@@ -12,6 +12,10 @@ class Settings(BaseSettings):
     shopify_webhook_secret: str = ""
     shopify_store_domain: str = ""
     shopify_admin_access_token: str = ""
+    shopify_client_id: str = ""
+    shopify_client_secret: str = ""
+    shopify_admin_scopes: str = ""
+
 
 
     admin_api_key: str = ""
