@@ -5,3 +5,9 @@ __pycache__/
 middleware.db
 *.sqlite
 *.sqlite3
+
+__pycache__/
+*.pyc
+middleware.db
+.env
+.venv/
