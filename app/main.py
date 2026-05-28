@@ -23,7 +23,11 @@ from app.sync_service import (
 )
 from app.webhook_security import verify_shopify_hmac
 from app.db_maintenance import ensure_order_sync_schema
-from app.shopify_admin_client import ShopifyAdminAPIError, get_shopify_order_by_id
+from app.shopify_admin_client import (
+    ShopifyAdminAPIError,
+    get_shopify_fulfilment_plan,
+    get_shopify_order_by_id,
+)
 
 
 
@@ -67,6 +71,19 @@ def admin_get_shopify_order(
         "found": True,
         "order": order,
     }
+
+@app.get("/admin/shopify/orders/{shopify_order_id}/fulfilment-plan")
+def admin_get_shopify_fulfilment_plan(
+    shopify_order_id: str,
+    _: bool = Depends(require_admin_key),
+):
+    try:
+        plan = get_shopify_fulfilment_plan(shopify_order_id)
+    except ShopifyAdminAPIError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    return plan
+
 
 
 @app.post("/orders/test-standard")

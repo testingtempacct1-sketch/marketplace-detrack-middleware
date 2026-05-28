@@ -15,6 +15,8 @@ class Settings(BaseSettings):
     shopify_client_id: str = ""
     shopify_client_secret: str = ""
     shopify_admin_scopes: str = ""
+    shopify_fulfilment_dry_run: bool = True
+    shopify_fulfilment_allowed: bool = False
 
 
 

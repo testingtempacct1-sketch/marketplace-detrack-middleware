@@ -137,6 +137,103 @@ def get_shopify_order_by_id(shopify_order_id: str) -> dict:
       }
     }
     """
+def get_shopify_fulfilment_plan(shopify_order_id: str) -> dict:
+    gid = f"gid://shopify/Order/{shopify_order_id}"
+
+    query = """
+    query GetFulfilmentPlan($id: ID!) {
+      order(id: $id) {
+        id
+        name
+        displayFulfillmentStatus
+        displayFinancialStatus
+        fulfillmentOrders(first: 10) {
+          edges {
+            node {
+              id
+              status
+              requestStatus
+              supportedActions {
+                action
+              }
+              lineItems(first: 20) {
+                edges {
+                  node {
+                    id
+                    totalQuantity
+                    remainingQuantity
+                    lineItem {
+                      name
+                      sku
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+    """
+
+    payload = shopify_graphql(query, {"id": gid})
+    order = payload.get("data", {}).get("order")
+
+    if not order:
+        raise ShopifyAdminAPIError(f"Shopify order not found: {shopify_order_id}")
+
+    fulfilment_orders = []
+    can_fulfil = False
+
+    for edge in order.get("fulfillmentOrders", {}).get("edges", []):
+        node = edge.get("node") or {}
+
+        supported_actions = [
+            item.get("action")
+            for item in node.get("supportedActions", [])
+            if item.get("action")
+        ]
+
+        line_items = []
+        for line_edge in node.get("lineItems", {}).get("edges", []):
+            line_node = line_edge.get("node") or {}
+            shopify_line_item = line_node.get("lineItem") or {}
+
+            line_items.append(
+                {
+                    "id": line_node.get("id"),
+                    "name": shopify_line_item.get("name"),
+                    "sku": shopify_line_item.get("sku"),
+                    "total_quantity": line_node.get("totalQuantity"),
+                    "remaining_quantity": line_node.get("remainingQuantity"),
+                }
+            )
+
+        if "CREATE_FULFILLMENT" in supported_actions:
+            can_fulfil = True
+
+        fulfilment_orders.append(
+            {
+                "id": node.get("id"),
+                "status": node.get("status"),
+                "request_status": node.get("requestStatus"),
+                "supported_actions": supported_actions,
+                "line_items": line_items,
+            }
+        )
+
+    return {
+        "shopify_order_id": shopify_order_id,
+        "order_id": order.get("id"),
+        "order_name": order.get("name"),
+        "display_fulfillment_status": order.get("displayFulfillmentStatus"),
+        "display_financial_status": order.get("displayFinancialStatus"),
+        "can_fulfil": can_fulfil,
+        "dry_run": settings.shopify_fulfilment_dry_run,
+        "fulfilment_allowed": settings.shopify_fulfilment_allowed,
+        "fulfilment_orders": fulfilment_orders,
+    }
+
 
     payload = shopify_graphql(query, {"id": gid})
     order = payload.get("data", {}).get("order")
