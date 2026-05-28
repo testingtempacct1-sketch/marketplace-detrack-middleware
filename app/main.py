@@ -23,6 +23,8 @@ from app.sync_service import (
 )
 from app.webhook_security import verify_shopify_hmac
 from app.db_maintenance import ensure_order_sync_schema
+from app.shopify_admin_client import ShopifyAdminAPIError, get_shopify_order_by_id
+
 
 
 Base.metadata.create_all(bind=engine)
@@ -49,6 +51,21 @@ def recent_orders(
     return {
         "count": limit,
         "orders": list_recent_order_syncs(db, limit=limit),
+    }
+
+@app.get("/admin/shopify/orders/{shopify_order_id}")
+def admin_get_shopify_order(
+    shopify_order_id: str,
+    _: bool = Depends(require_admin_key),
+):
+    try:
+        order = get_shopify_order_by_id(shopify_order_id)
+    except ShopifyAdminAPIError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    return {
+        "found": True,
+        "order": order,
     }
 
 

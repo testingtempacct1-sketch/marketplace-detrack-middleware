@@ -10,6 +10,9 @@ class Settings(BaseSettings):
     detrack_webhook_secret: str = ""
 
     shopify_webhook_secret: str = ""
+    shopify_store_domain: str = ""
+    shopify_admin_access_token: str = ""
+
 
     admin_api_key: str = ""
 
