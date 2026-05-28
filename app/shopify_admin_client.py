@@ -327,3 +327,80 @@ def build_shopify_fulfilment_dry_run(
         },
         "plan": plan,
     }
+
+
+def create_shopify_fulfilment(
+    shopify_order_id: str,
+    tracking_number: str | None = None,
+    tracking_url: str | None = None,
+    notify_customer: bool = False,
+) -> dict:
+    dry_run_result = build_shopify_fulfilment_dry_run(
+        shopify_order_id=shopify_order_id,
+        tracking_number=tracking_number,
+        tracking_url=tracking_url,
+        notify_customer=notify_customer,
+    )
+
+    if settings.shopify_fulfilment_dry_run:
+        return {
+            **dry_run_result,
+            "created": False,
+            "would_call_shopify": False,
+            "blocked_by": "SHOPIFY_FULFILMENT_DRY_RUN=true",
+            "message": "Dry run is enabled. No Shopify fulfilment was created.",
+        }
+
+    if not settings.shopify_fulfilment_allowed:
+        return {
+            **dry_run_result,
+            "created": False,
+            "would_call_shopify": False,
+            "blocked_by": "SHOPIFY_FULFILMENT_ALLOWED=false",
+            "message": "Shopify fulfilment is not allowed. No Shopify fulfilment was created.",
+        }
+
+    if not dry_run_result["can_fulfil"]:
+        return {
+            **dry_run_result,
+            "created": False,
+            "would_call_shopify": False,
+            "blocked_by": "can_fulfil=false",
+            "message": "Shopify order cannot currently be fulfilled.",
+        }
+
+    mutation = """
+    mutation CreateFulfillment($fulfillment: FulfillmentInput!, $message: String) {
+      fulfillmentCreate(fulfillment: $fulfillment, message: $message) {
+        fulfillment {
+          id
+          status
+          trackingInfo {
+            company
+            number
+            url
+          }
+        }
+        userErrors {
+          field
+          message
+        }
+      }
+    }
+    """
+
+    payload = shopify_graphql(mutation, dry_run_result["variables"])
+    result = payload.get("data", {}).get("fulfillmentCreate") or {}
+    user_errors = result.get("userErrors") or []
+
+    if user_errors:
+        raise ShopifyAdminAPIError(f"Shopify fulfilment user errors: {user_errors}")
+
+    return {
+        **dry_run_result,
+        "created": True,
+        "would_call_shopify": True,
+        "message": "Shopify fulfilment was created.",
+        "shopify_response": result,
+    }
+

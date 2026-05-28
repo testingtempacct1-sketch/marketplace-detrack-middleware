@@ -26,9 +26,11 @@ from app.db_maintenance import ensure_order_sync_schema
 from app.shopify_admin_client import (
     ShopifyAdminAPIError,
     build_shopify_fulfilment_dry_run,
+    create_shopify_fulfilment,
     get_shopify_fulfilment_plan,
     get_shopify_order_by_id,
 )
+
 
 
 
@@ -107,6 +109,25 @@ def admin_shopify_fulfilment_dry_run(
 
     return result
 
+@app.post("/admin/shopify/orders/{shopify_order_id}/fulfil")
+def admin_shopify_fulfil_order(
+    shopify_order_id: str,
+    tracking_number: str | None = Body(default=None),
+    tracking_url: str | None = Body(default=None),
+    notify_customer: bool = Body(default=False),
+    _: bool = Depends(require_admin_key),
+):
+    try:
+        result = create_shopify_fulfilment(
+            shopify_order_id=shopify_order_id,
+            tracking_number=tracking_number,
+            tracking_url=tracking_url,
+            notify_customer=notify_customer,
+        )
+    except ShopifyAdminAPIError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    return result
 
 
 
