@@ -271,9 +271,9 @@ def build_shopify_fulfilment_dry_run(
             "would_call_shopify": False,
             "reason": "Shopify fulfilment safety checks failed.",
             "safety_checks": safety_checks,
+            "safety_passed": safety_passed,
             "plan": plan,
         }
-
 
     line_items_by_fulfillment_order = []
 
@@ -311,6 +311,23 @@ def build_shopify_fulfilment_dry_run(
         "notifyCustomer": notify_customer,
     }
 
+    def _clean_optional_text(value: str | None) -> str | None:
+        if value is None:
+            return None
+
+        cleaned = str(value).strip()
+
+        if not cleaned:
+            return None
+
+        if cleaned.lower() in {"null", "none", "string"}:
+            return None
+
+        return cleaned
+
+    tracking_number = _clean_optional_text(tracking_number)
+    tracking_url = _clean_optional_text(tracking_url)
+
     tracking_info = {}
 
     if tracking_number:
@@ -323,13 +340,12 @@ def build_shopify_fulfilment_dry_run(
         tracking_info["company"] = "Detrack"
         fulfillment_input["trackingInfo"] = tracking_info
 
-        return {
+    return {
         "shopify_order_id": shopify_order_id,
         "order_name": plan["order_name"],
         "can_fulfil": bool(line_items_by_fulfillment_order),
         "safety_checks": safety_checks,
         "safety_passed": safety_passed,
-
         "dry_run": settings.shopify_fulfilment_dry_run,
         "fulfilment_allowed": settings.shopify_fulfilment_allowed,
         "would_call_shopify": False,
