@@ -7,6 +7,7 @@ from app.detrack_client import DetrackAPIError, create_detrack_job
 from app.mapper import map_standard_order_to_detrack
 from app.models import OrderSync
 from app.schemas import StandardOrder, StandardOrderItem
+from app.shopify_admin_client import ShopifyAdminAPIError, create_shopify_fulfilment
 
 
 def _items_to_json(order: StandardOrder) -> str:
@@ -187,6 +188,23 @@ def update_delivery_status_from_detrack(db: Session, payload: dict) -> dict:
     if job_id and not order_sync.detrack_job_id:
         order_sync.detrack_job_id = job_id
 
+    shopify_fulfilment_result = None
+
+    if status.lower() == "completed" and order_sync.shopify_order_id:
+        try:
+            shopify_fulfilment_result = create_shopify_fulfilment(
+                shopify_order_id=order_sync.shopify_order_id,
+                tracking_number=order_sync.detrack_do_number,
+                tracking_url=None,
+                notify_customer=False,
+            )
+        except ShopifyAdminAPIError as exc:
+            shopify_fulfilment_result = {
+                "created": False,
+                "error": str(exc),
+                "message": "Shopify fulfilment attempt failed.",
+            }
+
     db.commit()
     db.refresh(order_sync)
 
@@ -201,6 +219,7 @@ def update_delivery_status_from_detrack(db: Session, payload: dict) -> dict:
         "detrack_job_id": order_sync.detrack_job_id,
         "previous_delivery_status": previous_status,
         "new_delivery_status": order_sync.delivery_status,
+        "shopify_fulfilment_result": shopify_fulfilment_result,
         "received": info,
     }
 
