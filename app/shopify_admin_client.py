@@ -137,6 +137,16 @@ def get_shopify_order_by_id(shopify_order_id: str) -> dict:
       }
     }
     """
+
+    payload = shopify_graphql(query, {"id": gid})
+    order = payload.get("data", {}).get("order")
+
+    if not order:
+        raise ShopifyAdminAPIError(f"Shopify order not found: {shopify_order_id}")
+
+    return order
+
+
 def get_shopify_fulfilment_plan(shopify_order_id: str) -> dict:
     gid = f"gid://shopify/Order/{shopify_order_id}"
 
@@ -235,10 +245,85 @@ def get_shopify_fulfilment_plan(shopify_order_id: str) -> dict:
     }
 
 
-    payload = shopify_graphql(query, {"id": gid})
-    order = payload.get("data", {}).get("order")
+def build_shopify_fulfilment_dry_run(
+    shopify_order_id: str,
+    tracking_number: str | None = None,
+    tracking_url: str | None = None,
+    notify_customer: bool = False,
+) -> dict:
+    plan = get_shopify_fulfilment_plan(shopify_order_id)
 
-    if not order:
-        raise ShopifyAdminAPIError(f"Shopify order not found: {shopify_order_id}")
+    if not plan["can_fulfil"]:
+        return {
+            "shopify_order_id": shopify_order_id,
+            "can_fulfil": False,
+            "dry_run": settings.shopify_fulfilment_dry_run,
+            "fulfilment_allowed": settings.shopify_fulfilment_allowed,
+            "would_call_shopify": False,
+            "reason": "Shopify order cannot currently be fulfilled.",
+            "plan": plan,
+        }
 
-    return order
+    line_items_by_fulfillment_order = []
+
+    for fulfilment_order in plan["fulfilment_orders"]:
+        supported_actions = fulfilment_order.get("supported_actions", [])
+
+        if "CREATE_FULFILLMENT" not in supported_actions:
+            continue
+
+        fulfilment_order_line_items = []
+
+        for line_item in fulfilment_order.get("line_items", []):
+            remaining_quantity = line_item.get("remaining_quantity") or 0
+
+            if remaining_quantity <= 0:
+                continue
+
+            fulfilment_order_line_items.append(
+                {
+                    "id": line_item["id"],
+                    "quantity": remaining_quantity,
+                }
+            )
+
+        if fulfilment_order_line_items:
+            line_items_by_fulfillment_order.append(
+                {
+                    "fulfillmentOrderId": fulfilment_order["id"],
+                    "fulfillmentOrderLineItems": fulfilment_order_line_items,
+                }
+            )
+
+    fulfillment_input = {
+        "lineItemsByFulfillmentOrder": line_items_by_fulfillment_order,
+        "notifyCustomer": notify_customer,
+    }
+
+    tracking_info = {}
+
+    if tracking_number:
+        tracking_info["number"] = tracking_number
+
+    if tracking_url:
+        tracking_info["url"] = tracking_url
+
+    if tracking_info:
+        tracking_info["company"] = "Detrack"
+        fulfillment_input["trackingInfo"] = tracking_info
+
+    return {
+        "shopify_order_id": shopify_order_id,
+        "order_name": plan["order_name"],
+        "can_fulfil": bool(line_items_by_fulfillment_order),
+        "dry_run": settings.shopify_fulfilment_dry_run,
+        "fulfilment_allowed": settings.shopify_fulfilment_allowed,
+        "would_call_shopify": False,
+        "mutation_name": "fulfillmentCreate",
+        "message": "Dry run only. No Shopify fulfilment was created.",
+        "variables": {
+            "fulfillment": fulfillment_input,
+            "message": "Fulfilled from Detrack delivery status update.",
+        },
+        "plan": plan,
+    }
