@@ -62,7 +62,8 @@ def _get_cached_or_new_access_token() -> str:
         payload = response.json()
     except ValueError as exc:
         raise ShopifyAdminAPIError(
-            f"Shopify token endpoint returned non-JSON response {response.status_code}: {response.text[:500]}"
+            f"Shopify token endpoint returned non-JSON response "
+            f"{response.status_code}: {response.text[:500]}"
         ) from exc
 
     if response.status_code >= 400:
@@ -104,7 +105,8 @@ def shopify_graphql(query: str, variables: dict | None = None) -> dict:
         payload = response.json()
     except ValueError as exc:
         raise ShopifyAdminAPIError(
-            f"Shopify API returned non-JSON response {response.status_code}: {response.text[:500]}"
+            f"Shopify API returned non-JSON response "
+            f"{response.status_code}: {response.text[:500]}"
         ) from exc
 
     if response.status_code >= 400:
@@ -132,9 +134,6 @@ def get_shopify_order_by_id(shopify_order_id: str) -> dict:
         displayFinancialStatus
         createdAt
         legacyResourceId
-        customer {
-          displayName
-        }
       }
     }
     """
