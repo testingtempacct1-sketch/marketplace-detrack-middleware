@@ -253,16 +253,27 @@ def build_shopify_fulfilment_dry_run(
 ) -> dict:
     plan = get_shopify_fulfilment_plan(shopify_order_id)
 
-    if not plan["can_fulfil"]:
+    safety_checks = {
+        "is_paid": plan.get("display_financial_status") == "PAID",
+        "is_unfulfilled": plan.get("display_fulfillment_status") == "UNFULFILLED",
+        "can_fulfil": bool(plan.get("can_fulfil")),
+    }
+
+    safety_passed = all(safety_checks.values())
+
+    if not safety_passed:
         return {
             "shopify_order_id": shopify_order_id,
+            "order_name": plan.get("order_name"),
             "can_fulfil": False,
             "dry_run": settings.shopify_fulfilment_dry_run,
             "fulfilment_allowed": settings.shopify_fulfilment_allowed,
             "would_call_shopify": False,
-            "reason": "Shopify order cannot currently be fulfilled.",
+            "reason": "Shopify fulfilment safety checks failed.",
+            "safety_checks": safety_checks,
             "plan": plan,
         }
+
 
     line_items_by_fulfillment_order = []
 
@@ -312,10 +323,13 @@ def build_shopify_fulfilment_dry_run(
         tracking_info["company"] = "Detrack"
         fulfillment_input["trackingInfo"] = tracking_info
 
-    return {
+        return {
         "shopify_order_id": shopify_order_id,
         "order_name": plan["order_name"],
         "can_fulfil": bool(line_items_by_fulfillment_order),
+        "safety_checks": safety_checks,
+        "safety_passed": safety_passed,
+
         "dry_run": settings.shopify_fulfilment_dry_run,
         "fulfilment_allowed": settings.shopify_fulfilment_allowed,
         "would_call_shopify": False,
