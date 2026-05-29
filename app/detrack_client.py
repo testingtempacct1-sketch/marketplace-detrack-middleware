@@ -42,13 +42,15 @@ def update_detrack_job_as_cancelled(do_number: str) -> dict:
         "data": {
             "do_number": do_number,
             "status": "on_hold",
+            "tracking_status": "on_hold",
             "reason": "Shopify/TikTok order cancelled",
             "instructions": "CANCELLED FROM SHOPIFY — DO NOT DELIVER",
+            "note": "CANCELLED FROM SHOPIFY — DO NOT DELIVER",
         }
     }
 
     response = requests.put(
-        settings.detrack_base_url,
+        f"{settings.detrack_base_url}/{do_number}",
         headers={
             "Content-Type": "application/json",
             "X-API-Key": settings.detrack_api_key,
@@ -70,4 +72,5 @@ def update_detrack_job_as_cancelled(do_number: str) -> dict:
         )
 
     return result
+
 
