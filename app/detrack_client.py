@@ -35,3 +35,39 @@ def create_detrack_job(payload: dict) -> dict:
         )
 
     return response.json()
+
+    
+def update_detrack_job_as_cancelled(do_number: str) -> dict:
+    payload = {
+        "data": {
+            "do_number": do_number,
+            "status": "on_hold",
+            "reason": "Shopify/TikTok order cancelled",
+            "instructions": "CANCELLED FROM SHOPIFY — DO NOT DELIVER",
+        }
+    }
+
+    response = requests.put(
+        settings.detrack_base_url,
+        headers={
+            "Content-Type": "application/json",
+            "X-API-Key": settings.detrack_api_key,
+        },
+        json=payload,
+        timeout=30,
+    )
+
+    try:
+        result = response.json()
+    except ValueError as exc:
+        raise DetrackAPIError(
+            f"Detrack returned non-JSON response {response.status_code}: {response.text[:500]}"
+        ) from exc
+
+    if response.status_code >= 400:
+        raise DetrackAPIError(
+            f"Detrack update failed {response.status_code}: {result}"
+        )
+
+    return result
+

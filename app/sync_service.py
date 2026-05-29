@@ -3,7 +3,7 @@ from datetime import datetime
 
 from sqlalchemy.orm import Session
 
-from app.detrack_client import DetrackAPIError, create_detrack_job
+from app.detrack_client import DetrackAPIError, create_detrack_job, update_detrack_job_as_cancelled
 from app.mapper import map_standard_order_to_detrack
 from app.models import OrderSync
 from app.schemas import StandardOrder, StandardOrderItem
@@ -476,7 +476,7 @@ def retry_failed_detrack_sync(db: Session, order_sync_id: int) -> dict:
             "error": str(exc),
             "detrack_payload": detrack_payload,
         }
-        
+
 def handle_shopify_order_cancelled(db: Session, payload: dict) -> dict:
     shopify_order_id = str(payload.get("id") or "").strip()
     shopify_order_name = str(payload.get("name") or "").strip() or None
@@ -504,12 +504,26 @@ def handle_shopify_order_cancelled(db: Session, payload: dict) -> dict:
     previous_sync_status = order_sync.sync_status
     previous_delivery_status = order_sync.delivery_status
 
+    detrack_cancel_result = None
+
+    if order_sync.detrack_do_number:
+        try:
+            detrack_cancel_result = update_detrack_job_as_cancelled(
+                order_sync.detrack_do_number
+            )
+        except DetrackAPIError as exc:
+            detrack_cancel_result = {
+                "updated": False,
+                "error": str(exc),
+            }
+
     order_sync.sync_status = "cancelled"
     order_sync.delivery_status = "cancelled"
     order_sync.error_message = (
         "Shopify order cancelled. "
         f"Previous sync_status={previous_sync_status}, "
-        f"previous delivery_status={previous_delivery_status}"
+        f"previous delivery_status={previous_delivery_status}. "
+        f"Detrack cancel result={detrack_cancel_result}"
     )
     order_sync.updated_at = datetime.utcnow()
 
@@ -528,4 +542,6 @@ def handle_shopify_order_cancelled(db: Session, payload: dict) -> dict:
         "previous_delivery_status": previous_delivery_status,
         "new_sync_status": order_sync.sync_status,
         "new_delivery_status": order_sync.delivery_status,
+        "detrack_cancel_result": detrack_cancel_result,
     }
+
