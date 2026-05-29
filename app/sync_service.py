@@ -280,12 +280,7 @@ def create_or_get_order_sync(db: Session, order: StandardOrder) -> dict:
         items_json=_items_to_json(order),
         remarks=order.remarks,
         delivery_date=order.delivery_date,
-        detrack_do_number=(
-             f"ZF-{str(order.source_order_name).replace('#', '').strip()}"
-                if order.source_order_name
-                 else f"ZF-{order.source_order_id}"
-            ),
-
+        detrack_do_number=detrack_payload["data"]["do_number"],
         sync_status="pending",
     )
 
