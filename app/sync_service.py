@@ -3,7 +3,12 @@ from datetime import datetime
 
 from sqlalchemy.orm import Session
 
-from app.detrack_client import DetrackAPIError, create_detrack_job, update_detrack_job_as_cancelled
+from app.detrack_client import (
+    DetrackAPIError,
+    create_detrack_job,
+    find_detrack_job_by_do_number,
+    update_detrack_job_as_cancelled,
+)
 from app.mapper import map_standard_order_to_detrack
 from app.models import OrderSync
 from app.schemas import StandardOrder, StandardOrderItem
@@ -561,4 +566,71 @@ def handle_shopify_order_cancelled(db: Session, payload: dict) -> dict:
         "new_delivery_status": order_sync.delivery_status,
         "detrack_cancel_result": detrack_cancel_result,
     }
+
+def cancel_shopee_detrack_job(shopee_order_sn: str) -> dict:
+    do_number = str(shopee_order_sn or "").strip()
+
+    if not do_number:
+        return {
+            "updated": False,
+            "message": "Shopee order number is missing.",
+        }
+
+    try:
+        job = find_detrack_job_by_do_number(do_number)
+    except Exception as exc:
+        return {
+            "updated": False,
+            "message": "Failed to look up Detrack job.",
+            "detrack_do_number": do_number,
+            "error": str(exc),
+        }
+
+    if not job:
+        return {
+            "updated": False,
+            "message": "No Detrack job found for Shopee order number.",
+            "detrack_do_number": do_number,
+        }
+
+    job_id = job.get("id")
+
+    if not job_id:
+        return {
+            "updated": False,
+            "message": "Detrack job found but missing job id.",
+            "detrack_do_number": do_number,
+            "job": job,
+        }
+
+    try:
+        result = update_detrack_job_as_cancelled(
+            job_id=job_id,
+            do_number=do_number,
+            reason="Shopee order cancelled",
+            cancel_message="CANCELLED FROM SHOPEE - DO NOT DELIVER",
+        )
+    except Exception as exc:
+        return {
+            "updated": False,
+            "message": "Failed to update Detrack job as cancelled.",
+            "detrack_do_number": do_number,
+            "detrack_job_id": job_id,
+            "error": str(exc),
+        }
+
+    data = result.get("data") or {}
+
+    return {
+        "updated": True,
+        "message": "Shopee Detrack job placed on hold.",
+        "detrack_do_number": do_number,
+        "detrack_job_id": job_id,
+        "status": data.get("status"),
+        "tracking_status": data.get("tracking_status"),
+        "reason": data.get("reason"),
+        "instructions": data.get("instructions"),
+        "note": data.get("note"),
+    }
+
 

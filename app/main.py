@@ -21,6 +21,7 @@ from app.sync_service import (
     retry_failed_detrack_sync,
     update_delivery_status_from_detrack,
     handle_shopify_order_cancelled,
+    cancel_shopee_detrack_job,
 )
 from app.webhook_security import verify_shopify_hmac
 from app.db_maintenance import ensure_order_sync_schema
@@ -130,6 +131,12 @@ def admin_shopify_fulfil_order(
 
     return result
 
+@app.post("/admin/shopee/orders/{shopee_order_sn}/cancel-detrack")
+def admin_cancel_shopee_detrack_job(
+    shopee_order_sn: str,
+    _: bool = Depends(require_admin_key),
+):
+    return cancel_shopee_detrack_job(shopee_order_sn)
 
 
 @app.post("/orders/test-standard")
