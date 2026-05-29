@@ -506,11 +506,14 @@ def handle_shopify_order_cancelled(db: Session, payload: dict) -> dict:
 
     detrack_cancel_result = None
 
-    if order_sync.detrack_do_number:
+    if order_sync.detrack_job_id:
         try:
             detrack_cancel_result = update_detrack_job_as_cancelled(
-                order_sync.detrack_do_number
-            )
+            job_id=order_sync.detrack_job_id,
+            do_number=order_sync.detrack_do_number,
+        )
+
+            
         except DetrackAPIError as exc:
             detrack_cancel_result = {
                 "updated": False,
