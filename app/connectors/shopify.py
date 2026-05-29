@@ -141,6 +141,7 @@ def shopify_order_to_standard(payload: dict) -> StandardOrder:
     return StandardOrder(
         source=internal_source,
         source_order_id=order_id,
+        source_order_name=order_name,
         customer_name=customer_name,
         phone=phone,
         address=address,
