@@ -24,7 +24,7 @@ def create_detrack_job(payload: dict) -> dict:
             url,
             headers=headers,
             json=payload,
-            timeout=30,
+            timeout=8,
         )
     except httpx.RequestError as exc:
         raise DetrackAPIError(f"Unable to connect to Detrack: {exc}") from exc
@@ -54,7 +54,7 @@ def update_detrack_job_as_cancelled(do_number: str) -> dict:
             "X-API-Key": settings.detrack_api_key,
         },
         json=payload,
-        timeout=30,
+        timeout=8,
     )
 
     try:

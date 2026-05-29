@@ -372,7 +372,7 @@ def create_order_and_send_to_detrack(db: Session, order: StandardOrder) -> dict:
             "detrack_response": detrack_response,
         }
 
-    except DetrackAPIError as exc:
+    except Exception as exc:
         order_sync.sync_status = "detrack_failed"
         order_sync.error_message = str(exc)
         order_sync.updated_at = datetime.utcnow()
