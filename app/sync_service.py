@@ -509,16 +509,30 @@ def handle_shopify_order_cancelled(db: Session, payload: dict) -> dict:
     if order_sync.detrack_job_id:
         try:
             detrack_cancel_result = update_detrack_job_as_cancelled(
-            job_id=order_sync.detrack_job_id,
-            do_number=order_sync.detrack_do_number,
-        )
-
-            
-        except DetrackAPIError as exc:
+                job_id=order_sync.detrack_job_id,
+                do_number=order_sync.detrack_do_number,
+            )
+        except Exception as exc:
             detrack_cancel_result = {
                 "updated": False,
                 "error": str(exc),
             }
+
+    detrack_cancel_summary = "not_attempted"
+
+    if isinstance(detrack_cancel_result, dict):
+        if detrack_cancel_result.get("data"):
+            detrack_data = detrack_cancel_result.get("data") or {}
+            detrack_cancel_summary = (
+                f"updated=True, "
+                f"status={detrack_data.get('status')}, "
+                f"tracking_status={detrack_data.get('tracking_status')}, "
+                f"do_number={detrack_data.get('do_number')}"
+            )
+        elif detrack_cancel_result.get("error"):
+            detrack_cancel_summary = (
+                f"updated=False, error={detrack_cancel_result.get('error')}"
+            )
 
     order_sync.sync_status = "cancelled"
     order_sync.delivery_status = "cancelled"
@@ -526,7 +540,7 @@ def handle_shopify_order_cancelled(db: Session, payload: dict) -> dict:
         "Shopify order cancelled. "
         f"Previous sync_status={previous_sync_status}, "
         f"previous delivery_status={previous_delivery_status}. "
-        f"Detrack cancel result={detrack_cancel_result}"
+        f"Detrack cancel result={detrack_cancel_summary}"
     )
     order_sync.updated_at = datetime.utcnow()
 
