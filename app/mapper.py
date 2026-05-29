@@ -17,7 +17,7 @@ def map_standard_order_to_detrack(order: StandardOrder) -> dict:
 
     return {
         "data": {
-            "do_number": f"{order.source.upper()}-{order.source_order_id}",
+            "do_number": f"ZF-{order.source_order_id}",
             "date": delivery_date,
             "deliver_to": order.customer_name,
             "phone_number": order.phone,
