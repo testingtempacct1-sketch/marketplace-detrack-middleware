@@ -20,6 +20,7 @@ from app.sync_service import (
     list_recent_order_syncs,
     retry_failed_detrack_sync,
     update_delivery_status_from_detrack,
+    handle_shopify_order_cancelled,
 )
 from app.webhook_security import verify_shopify_hmac
 from app.db_maintenance import ensure_order_sync_schema
@@ -235,3 +236,12 @@ async def shopify_orders_create_webhook(
         "shop": x_shopify_shop_domain,
         "result": result,
     }
+
+@app.post("/webhooks/shopify/orders-cancelled")
+async def shopify_order_cancelled_webhook(
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    payload = await request.json()
+    return handle_shopify_order_cancelled(db, payload)
+

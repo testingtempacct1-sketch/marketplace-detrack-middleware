@@ -476,3 +476,56 @@ def retry_failed_detrack_sync(db: Session, order_sync_id: int) -> dict:
             "error": str(exc),
             "detrack_payload": detrack_payload,
         }
+        
+def handle_shopify_order_cancelled(db: Session, payload: dict) -> dict:
+    shopify_order_id = str(payload.get("id") or "").strip()
+    shopify_order_name = str(payload.get("name") or "").strip() or None
+
+    if not shopify_order_id:
+        return {
+            "updated": False,
+            "message": "Shopify cancelled webhook missing order id.",
+        }
+
+    order_sync = (
+        db.query(OrderSync)
+        .filter(OrderSync.shopify_order_id == shopify_order_id)
+        .first()
+    )
+
+    if not order_sync:
+        return {
+            "updated": False,
+            "message": "No matching order sync record found for cancelled Shopify order.",
+            "shopify_order_id": shopify_order_id,
+            "shopify_order_name": shopify_order_name,
+        }
+
+    previous_sync_status = order_sync.sync_status
+    previous_delivery_status = order_sync.delivery_status
+
+    order_sync.sync_status = "cancelled"
+    order_sync.delivery_status = "cancelled"
+    order_sync.error_message = (
+        "Shopify order cancelled. "
+        f"Previous sync_status={previous_sync_status}, "
+        f"previous delivery_status={previous_delivery_status}"
+    )
+    order_sync.updated_at = datetime.utcnow()
+
+    db.commit()
+    db.refresh(order_sync)
+
+    return {
+        "updated": True,
+        "message": "Order marked as cancelled from Shopify webhook.",
+        "order_sync_id": order_sync.id,
+        "shopify_order_id": order_sync.shopify_order_id,
+        "shopify_order_name": order_sync.shopify_order_name,
+        "detrack_do_number": order_sync.detrack_do_number,
+        "detrack_job_id": order_sync.detrack_job_id,
+        "previous_sync_status": previous_sync_status,
+        "previous_delivery_status": previous_delivery_status,
+        "new_sync_status": order_sync.sync_status,
+        "new_delivery_status": order_sync.delivery_status,
+    }
