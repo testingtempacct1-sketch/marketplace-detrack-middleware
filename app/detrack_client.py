@@ -33,14 +33,19 @@ def create_detrack_job(payload: dict) -> dict:
     return result
 
 
-def update_detrack_job_as_cancelled(job_id: str, do_number: str | None = None) -> dict:
+def update_detrack_job_as_cancelled(
+    job_id: str,
+    do_number: str | None = None,
+    reason: str = "Shopify/TikTok order cancelled",
+    cancel_message: str = "CANCELLED FROM SHOPIFY - DO NOT DELIVER",
+) -> dict:
     payload = {
         "data": {
             "status": "on_hold",
             "tracking_status": "on_hold",
-            "reason": "Shopify/TikTok order cancelled",
-            "instructions": "CANCELLED FROM SHOPIFY - DO NOT DELIVER",
-            "note": "CANCELLED FROM SHOPIFY - DO NOT DELIVER",
+            "reason": reason,
+            "instructions": cancel_message,
+            "note": cancel_message,
         }
     }
 
@@ -101,3 +106,4 @@ def find_detrack_job_by_do_number(do_number: str) -> dict | None:
         return None
 
     return jobs[0]
+
