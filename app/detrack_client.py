@@ -33,6 +33,68 @@ def create_detrack_job(payload: dict) -> dict:
     return result
 
 
+def get_detrack_job(job_id: str) -> dict | None:
+    """
+    Fetch a single Detrack job by its internal job ID.
+    Returns the job dict, or None if not found (404).
+    """
+    response = requests.get(
+        f"{settings.detrack_base_url}/{job_id}",
+        headers={
+            "Content-Type": "application/json",
+            "X-API-Key": settings.detrack_api_key,
+        },
+        timeout=8,
+    )
+
+    try:
+        result = response.json()
+    except ValueError as exc:
+        raise DetrackAPIError(
+            f"Detrack returned non-JSON response {response.status_code}: {response.text[:500]}"
+        ) from exc
+
+    if response.status_code == 404:
+        return None
+
+    if response.status_code >= 400:
+        raise DetrackAPIError(
+            f"Detrack fetch failed {response.status_code}: {result}"
+        )
+
+    return result.get("data") or result
+
+
+def delete_detrack_job(job_id: str) -> bool:
+    """
+    Delete a Detrack job entirely by its internal job ID.
+    Returns True if deleted successfully, False if not found (404).
+    Raises DetrackAPIError on other failures.
+    """
+    response = requests.delete(
+        f"{settings.detrack_base_url}/{job_id}",
+        headers={
+            "Content-Type": "application/json",
+            "X-API-Key": settings.detrack_api_key,
+        },
+        timeout=8,
+    )
+
+    if response.status_code == 404:
+        return False
+
+    if response.status_code >= 400:
+        try:
+            result = response.json()
+        except ValueError:
+            result = response.text[:500]
+        raise DetrackAPIError(
+            f"Detrack delete failed {response.status_code}: {result}"
+        )
+
+    return True
+
+
 def update_detrack_job_as_cancelled(
     job_id: str,
     do_number: str | None = None,
@@ -106,4 +168,3 @@ def find_detrack_job_by_do_number(do_number: str) -> dict | None:
         return None
 
     return jobs[0]
-

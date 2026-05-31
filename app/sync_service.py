@@ -6,7 +6,9 @@ from sqlalchemy.orm import Session
 from app.detrack_client import (
     DetrackAPIError,
     create_detrack_job,
+    delete_detrack_job,
     find_detrack_job_by_do_number,
+    get_detrack_job,
     update_detrack_job_as_cancelled,
 )
 from app.mapper import map_standard_order_to_detrack
@@ -14,6 +16,55 @@ from app.models import OrderSync
 from app.schemas import StandardOrder, StandardOrderItem
 from app.shopify_admin_client import ShopifyAdminAPIError, create_shopify_fulfilment
 
+
+# ---------------------------------------------------------------------------
+# Detrack status logic (based on Detrack API v2 docs)
+#
+# status field API values:
+#   info_recv     → job created, no driver assigned
+#   in_transit    → goods in transit to warehouse, no driver assigned
+#   dispatched    → ready for driver; if assign_to is null = still unassigned
+#   dispatched    → if assign_to is not null = Out for delivery
+#   completed     → delivered
+#   failed        → failed delivery
+#   on_hold       → admin placed on hold
+#   return        → admin marked return
+#
+# DELETE the job if it has NOT yet been picked up by a driver:
+#   - status is info_recv or in_transit (never assigned)
+#   - status is dispatched AND assign_to is null (not yet picked up by driver)
+#
+# PUT ON HOLD if driver has already scanned and is out for delivery:
+#   - status is dispatched AND assign_to is not null
+#   - any other active status (failed, on_hold, return, etc.)
+# ---------------------------------------------------------------------------
+
+DETRACK_DELETABLE_API_STATUSES = {"info_recv", "in_transit"}
+
+
+def _should_delete_detrack_job(job: dict | None) -> tuple[bool, str]:
+    """
+    Determine whether to DELETE or PUT ON HOLD a Detrack job on cancellation.
+    Returns (should_delete: bool, current_status_description: str).
+    """
+    if not job:
+        return True, "job_not_found"
+
+    status = str(job.get("status") or "").lower().strip()
+    assign_to = job.get("assign_to")
+
+    if status in DETRACK_DELETABLE_API_STATUSES:
+        return True, status
+
+    if status == "dispatched" and not assign_to:
+        return True, "dispatched_unassigned"
+
+    return False, status
+
+
+# ---------------------------------------------------------------------------
+# Internal helpers
+# ---------------------------------------------------------------------------
 
 def _items_to_json(order: StandardOrder) -> str:
     return json.dumps(
@@ -98,6 +149,10 @@ def _get_nested(payload: dict, *paths: tuple[str, ...]):
 
     return None
 
+
+# ---------------------------------------------------------------------------
+# Detrack webhook handler
+# ---------------------------------------------------------------------------
 
 def extract_detrack_webhook_info(payload: dict) -> dict:
     do_number = _get_nested(
@@ -238,6 +293,10 @@ def update_delivery_status_from_detrack(db: Session, payload: dict) -> dict:
     }
 
 
+# ---------------------------------------------------------------------------
+# Order sync helpers
+# ---------------------------------------------------------------------------
+
 def list_recent_order_syncs(db: Session, limit: int = 20) -> list[dict]:
     safe_limit = max(1, min(limit, 100))
 
@@ -271,6 +330,7 @@ def create_or_get_order_sync(db: Session, order: StandardOrder) -> dict:
         }
 
     shopify_fields = _shopify_fields(order)
+    detrack_payload = map_standard_order_to_detrack(order)
 
     order_sync = OrderSync(
         source=order.source,
@@ -298,7 +358,7 @@ def create_or_get_order_sync(db: Session, order: StandardOrder) -> dict:
         "message": "Order saved successfully.",
         "order_sync_id": order_sync.id,
         "sync_status": order_sync.sync_status,
-        "detrack_payload": map_standard_order_to_detrack(order),
+        "detrack_payload": detrack_payload,
     }
 
 
@@ -482,6 +542,11 @@ def retry_failed_detrack_sync(db: Session, order_sync_id: int) -> dict:
             "detrack_payload": detrack_payload,
         }
 
+
+# ---------------------------------------------------------------------------
+# Shopify / TikTok cancellation handler
+# ---------------------------------------------------------------------------
+
 def handle_shopify_order_cancelled(db: Session, payload: dict) -> dict:
     shopify_order_id = str(payload.get("id") or "").strip()
     shopify_order_name = str(payload.get("name") or "").strip() or None
@@ -509,43 +574,71 @@ def handle_shopify_order_cancelled(db: Session, payload: dict) -> dict:
     previous_sync_status = order_sync.sync_status
     previous_delivery_status = order_sync.delivery_status
 
-    detrack_cancel_result = None
+    detrack_action = "not_attempted"
+    detrack_result = None
+    detrack_status_at_cancellation = None
 
     if order_sync.detrack_job_id:
         try:
-            detrack_cancel_result = update_detrack_job_as_cancelled(
-                job_id=order_sync.detrack_job_id,
-                do_number=order_sync.detrack_do_number,
-            )
-        except Exception as exc:
-            detrack_cancel_result = {
-                "updated": False,
-                "error": str(exc),
-            }
+            # Fetch current job from Detrack to decide delete vs on_hold
+            job = get_detrack_job(order_sync.detrack_job_id)
+            should_delete, detrack_status_at_cancellation = _should_delete_detrack_job(job)
 
-    detrack_cancel_summary = "not_attempted"
+            if should_delete:
+                # Job not yet picked up by driver — delete cleanly
+                deleted = delete_detrack_job(order_sync.detrack_job_id)
+                detrack_action = "deleted"
+                detrack_result = {
+                    "deleted": deleted,
+                    "reason": (
+                        f"Job status was '{detrack_status_at_cancellation}' "
+                        "— deleted cleanly before driver pickup."
+                    ),
+                }
 
-    if isinstance(detrack_cancel_result, dict):
-        if detrack_cancel_result.get("data"):
-            detrack_data = detrack_cancel_result.get("data") or {}
-            detrack_cancel_summary = (
-                f"updated=True, "
-                f"status={detrack_data.get('status')}, "
-                f"tracking_status={detrack_data.get('tracking_status')}, "
-                f"do_number={detrack_data.get('do_number')}"
-            )
-        elif detrack_cancel_result.get("error"):
-            detrack_cancel_summary = (
-                f"updated=False, error={detrack_cancel_result.get('error')}"
-            )
+                # Clean removal from middleware DB
+                db.delete(order_sync)
+                db.commit()
 
+                return {
+                    "updated": True,
+                    "message": "Order and Detrack job deleted cleanly (driver had not yet picked up).",
+                    "shopify_order_id": shopify_order_id,
+                    "shopify_order_name": shopify_order_name,
+                    "detrack_action": detrack_action,
+                    "detrack_status_at_cancellation": detrack_status_at_cancellation,
+                    "detrack_result": detrack_result,
+                    "previous_sync_status": previous_sync_status,
+                    "previous_delivery_status": previous_delivery_status,
+                }
+
+            else:
+                # Driver is already out for delivery — put on hold
+                source = order_sync.source or "shopify"
+                source_label = "TIKTOK" if "tiktok" in source.lower() else "SHOPIFY"
+
+                detrack_result = update_detrack_job_as_cancelled(
+                    job_id=order_sync.detrack_job_id,
+                    do_number=order_sync.detrack_do_number,
+                    reason=f"{source_label} order cancelled",
+                    cancel_message=f"CANCELLED FROM {source_label} - DO NOT DELIVER",
+                )
+                detrack_action = "on_hold"
+
+        except DetrackAPIError as exc:
+            detrack_action = "error"
+            detrack_result = {"error": str(exc)}
+
+    # Update DB record for on_hold or error cases
+    # (delete case already returned above)
     order_sync.sync_status = "cancelled"
     order_sync.delivery_status = "cancelled"
     order_sync.error_message = (
-        "Shopify order cancelled. "
+        f"Order cancelled. "
         f"Previous sync_status={previous_sync_status}, "
         f"previous delivery_status={previous_delivery_status}. "
-        f"Detrack cancel result={detrack_cancel_summary}"
+        f"Detrack action={detrack_action}, "
+        f"detrack_status_at_cancellation={detrack_status_at_cancellation}."
     )
     order_sync.updated_at = datetime.utcnow()
 
@@ -554,27 +647,37 @@ def handle_shopify_order_cancelled(db: Session, payload: dict) -> dict:
 
     return {
         "updated": True,
-        "message": "Order marked as cancelled from Shopify webhook.",
+        "message": f"Order cancelled. Detrack job action: {detrack_action}.",
         "order_sync_id": order_sync.id,
         "shopify_order_id": order_sync.shopify_order_id,
         "shopify_order_name": order_sync.shopify_order_name,
         "detrack_do_number": order_sync.detrack_do_number,
         "detrack_job_id": order_sync.detrack_job_id,
+        "detrack_action": detrack_action,
+        "detrack_status_at_cancellation": detrack_status_at_cancellation,
         "previous_sync_status": previous_sync_status,
         "previous_delivery_status": previous_delivery_status,
         "new_sync_status": order_sync.sync_status,
         "new_delivery_status": order_sync.delivery_status,
-        "detrack_cancel_result": detrack_cancel_result,
+        "detrack_result": detrack_result,
     }
 
-def cancel_shopee_detrack_job(shopee_order_sn: str) -> dict:
-    do_number = str(shopee_order_sn or "").strip()
 
-    if not do_number:
+# ---------------------------------------------------------------------------
+# Shopee cancellation handler (native Detrack integration)
+# ---------------------------------------------------------------------------
+
+def cancel_shopee_detrack_job(shopee_order_sn: str) -> dict:
+    raw_sn = str(shopee_order_sn or "").strip()
+
+    if not raw_sn:
         return {
             "updated": False,
             "message": "Shopee order number is missing.",
         }
+
+    # Native Shopee→Detrack integration prefixes DO numbers with "SP"
+    do_number = raw_sn if raw_sn.upper().startswith("SP") else f"SP{raw_sn}"
 
     try:
         job = find_detrack_job_by_do_number(do_number)
@@ -603,6 +706,30 @@ def cancel_shopee_detrack_job(shopee_order_sn: str) -> dict:
             "job": job,
         }
 
+    # Apply same delete vs on_hold logic for Shopee jobs
+    should_delete, detrack_status_at_cancellation = _should_delete_detrack_job(job)
+
+    if should_delete:
+        try:
+            deleted = delete_detrack_job(job_id)
+            return {
+                "updated": True,
+                "message": "Shopee Detrack job deleted cleanly (driver had not yet picked up).",
+                "detrack_do_number": do_number,
+                "detrack_job_id": job_id,
+                "detrack_action": "deleted",
+                "detrack_status_at_cancellation": detrack_status_at_cancellation,
+                "deleted": deleted,
+            }
+        except Exception as exc:
+            return {
+                "updated": False,
+                "message": "Failed to delete Detrack job.",
+                "detrack_do_number": do_number,
+                "detrack_job_id": job_id,
+                "error": str(exc),
+            }
+
     try:
         result = update_detrack_job_as_cancelled(
             job_id=job_id,
@@ -623,14 +750,14 @@ def cancel_shopee_detrack_job(shopee_order_sn: str) -> dict:
 
     return {
         "updated": True,
-        "message": "Shopee Detrack job placed on hold.",
+        "message": "Shopee Detrack job placed on hold (driver already out for delivery).",
         "detrack_do_number": do_number,
         "detrack_job_id": job_id,
+        "detrack_action": "on_hold",
+        "detrack_status_at_cancellation": detrack_status_at_cancellation,
         "status": data.get("status"),
         "tracking_status": data.get("tracking_status"),
         "reason": data.get("reason"),
         "instructions": data.get("instructions"),
         "note": data.get("note"),
     }
-
-
