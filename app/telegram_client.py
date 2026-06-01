@@ -94,3 +94,40 @@ def send_retry_success_alert(
     )
 
     return send_telegram_message(message)
+
+
+def send_daily_summary(
+    date_sgt: str,
+    total_orders: int,
+    by_source: dict,
+    completed: int,
+    cancelled: int,
+    failed: int,
+    permanent: int,
+) -> bool:
+    """Send a daily summary Telegram message at 9am SGT."""
+
+    source_lines = ""
+    for source, counts in by_source.items():
+        source_label = source.upper().replace("_", " ")
+        source_lines += f"  • {source_label}: {counts.get('total', 0)} orders\n"
+
+    if not source_lines:
+        source_lines = "  • No orders\n"
+
+    status_emoji = "✅" if failed == 0 and permanent == 0 else "⚠️"
+
+    message = (
+        f"{status_emoji} <b>Daily Summary — {date_sgt}</b>\n\n"
+        f"<b>Total Orders:</b> {total_orders}\n\n"
+        f"<b>By Source:</b>\n{source_lines}\n"
+        f"<b>Deliveries Completed:</b> {completed}\n"
+        f"<b>Cancelled:</b> {cancelled}\n"
+        f"<b>Failed (pending retry):</b> {failed}\n"
+        f"<b>Permanently Failed:</b> {permanent}\n"
+    )
+
+    if permanent > 0:
+        message += f"\n⚠️ {permanent} order(s) need manual intervention. Check /orders/failed"
+
+    return send_telegram_message(message)

@@ -57,63 +57,20 @@ def on_shutdown():
 
 @app.get("/health")
 def health_check(db: Session = Depends(get_db)):
-    # DB connectivity check
-    db_ok = False
-    db_error = None
-    try:
-        from sqlalchemy import text
-        db.execute(text("SELECT 1"))
-        db_ok = True
-    except Exception as exc:
-        db_error = str(exc)
-
-    # Detrack API reachability check
-    detrack_ok = False
-    detrack_error = None
-    try:
-        import requests as req
-        response = req.get(
-            settings.detrack_base_url,
-            headers={"X-API-Key": settings.detrack_api_key},
-            params={"limit": 1},
-            timeout=5,
-        )
-        detrack_ok = response.status_code < 500
-    except Exception as exc:
-        detrack_error = str(exc)
-
-    # Failed order counts
-    failed_count = 0
-    permanent_count = 0
-    try:
-        failed_count = (
-            db.query(OrderSync)
-            .filter(OrderSync.sync_status == "detrack_failed")
-            .count()
-        )
-        permanent_count = (
-            db.query(OrderSync)
-            .filter(OrderSync.sync_status == "detrack_failed_permanent")
-            .count()
-        )
-    except Exception:
-        pass
-
-    overall = "ok" if db_ok and detrack_ok else "degraded"
+    failed_count = (
+        db.query(OrderSync)
+        .filter(OrderSync.sync_status == "detrack_failed")
+        .count()
+    )
+    permanent_count = (
+        db.query(OrderSync)
+        .filter(OrderSync.sync_status == "detrack_failed_permanent")
+        .count()
+    )
 
     return {
-        "status": overall,
+        "status": "ok",
         "service": settings.app_name,
-        "checks": {
-            "database": {
-                "ok": db_ok,
-                "error": db_error,
-            },
-            "detrack_api": {
-                "ok": detrack_ok,
-                "error": detrack_error,
-            },
-        },
         "detrack_failed_pending_retry": failed_count,
         "detrack_failed_permanent": permanent_count,
     }
@@ -125,12 +82,98 @@ def dashboard():
     return HTMLResponse(content=html_path.read_text(encoding="utf-8"))
 
 
-@app.get("/orders/recent")
-def recent_orders(
-    limit: int = Query(default=20, ge=1, le=100),
+@app.get("/orders/search")
+def search_orders(
+    q: str | None = Query(default=None, description="Search by customer name, order ref, or DO number"),
+    date: str | None = Query(default=None, description="Filter by delivery date (YYYY-MM-DD)"),
+    source: str | None = Query(default=None, description="Filter by source (shopify, tiktok_shop, shopee)"),
+    status: str | None = Query(default=None, description="Filter by sync_status"),
+    limit: int = Query(default=50, ge=1, le=200),
     _: bool = Depends(require_admin_key),
     db: Session = Depends(get_db),
 ):
+    query = db.query(OrderSync)
+
+    if q:
+        search = f"%{q}%"
+        query = query.filter(
+            (OrderSync.customer_name.ilike(search))
+            | (OrderSync.source_order_id.ilike(search))
+            | (OrderSync.detrack_do_number.ilike(search))
+            | (OrderSync.shopify_order_name.ilike(search))
+        )
+
+    if date:
+        query = query.filter(OrderSync.delivery_date == date)
+
+    if source:
+        query = query.filter(OrderSync.source.ilike(f"%{source}%"))
+
+    if status:
+        query = query.filter(OrderSync.sync_status == status)
+
+    records = query.order_by(OrderSync.id.desc()).limit(limit).all()
+
+    return {
+        "count": len(records),
+        "filters": {"q": q, "date": date, "source": source, "status": status},
+        "orders": [
+            {
+                "id": r.id,
+                "source": r.source,
+                "source_order_id": r.source_order_id,
+                "shopify_order_name": r.shopify_order_name,
+                "customer_name": r.customer_name,
+                "detrack_do_number": r.detrack_do_number,
+                "detrack_job_id": r.detrack_job_id,
+                "sync_status": r.sync_status,
+                "delivery_status": r.delivery_status,
+                "delivery_date": r.delivery_date,
+                "retry_count": r.retry_count,
+                "error_message": r.error_message,
+                "created_at": r.created_at.isoformat() if r.created_at else None,
+                "updated_at": r.updated_at.isoformat() if r.updated_at else None,
+            }
+            for r in records
+        ],
+    }
+
+
+@app.get("/orders/stats")
+def order_stats(
+    _: bool = Depends(require_admin_key),
+    db: Session = Depends(get_db),
+):
+    """Returns order counts broken down by source and sync_status."""
+    from sqlalchemy import func
+
+    rows = (
+        db.query(OrderSync.source, OrderSync.sync_status, func.count(OrderSync.id))
+        .group_by(OrderSync.source, OrderSync.sync_status)
+        .all()
+    )
+
+    # Build breakdown by source
+    by_source = {}
+    total_by_status = {}
+
+    for source, status, count in rows:
+        source = source or "unknown"
+        if source not in by_source:
+            by_source[source] = {"total": 0}
+        by_source[source][status] = count
+        by_source[source]["total"] += count
+        total_by_status[status] = total_by_status.get(status, 0) + count
+
+    return {
+        "by_source": by_source,
+        "by_status": total_by_status,
+        "total": sum(total_by_status.values()),
+    }
+    limit: int = Query(default=20, ge=1, le=100),
+    _: bool = Depends(require_admin_key),
+    db: Session = Depends(get_db),
+
     return {
         "count": limit,
         "orders": list_recent_order_syncs(db, limit=limit),

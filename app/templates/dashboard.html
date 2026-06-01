@@ -504,6 +504,7 @@
 
   <div class="main">
     <!-- STATS -->
+    <!-- STATS ROW 1: Status counts -->
     <div class="stats-grid" id="stats-grid">
       <div class="stat-card green">
         <div class="stat-label">Synced to Detrack</div>
@@ -527,7 +528,82 @@
       </div>
     </div>
 
-    <!-- FAILED ORDERS -->
+    <!-- STATS ROW 2: Source breakdown -->
+    <div class="stats-grid" id="source-stats-grid">
+      <div class="stat-card blue">
+        <div class="stat-label">Shopify Orders</div>
+        <div class="stat-value" id="stat-shopify">—</div>
+      </div>
+      <div class="stat-card purple">
+        <div class="stat-label">TikTok Orders</div>
+        <div class="stat-value" id="stat-tiktok">—</div>
+      </div>
+      <div class="stat-card amber">
+        <div class="stat-label">Shopee Orders</div>
+        <div class="stat-value" id="stat-shopee">—</div>
+      </div>
+      <div class="stat-card green">
+        <div class="stat-label">Completed Today</div>
+        <div class="stat-value" id="stat-completed">—</div>
+      </div>
+    </div>
+
+    <!-- SEARCH & FILTER -->
+    <div class="section" style="margin-bottom:20px">
+      <div class="section-header">
+        <div class="section-title">Search & Filter</div>
+        <button class="action-btn" onclick="clearSearch()">CLEAR</button>
+      </div>
+      <div style="padding:14px 20px;display:flex;gap:12px;flex-wrap:wrap;align-items:center">
+        <input type="text" id="search-q" placeholder="Customer name, order ref, DO number..."
+          style="background:var(--bg3);border:1px solid var(--border2);color:var(--text);
+          font-family:var(--font-mono);font-size:12px;padding:8px 12px;outline:none;
+          flex:1;min-width:200px;transition:border-color 0.2s"
+          onfocus="this.style.borderColor='var(--green)'"
+          onblur="this.style.borderColor='var(--border2)'"
+          onkeydown="if(event.key==='Enter')runSearch()"/>
+        <input type="date" id="search-date"
+          style="background:var(--bg3);border:1px solid var(--border2);color:var(--text);
+          font-family:var(--font-mono);font-size:12px;padding:8px 12px;outline:none;
+          transition:border-color 0.2s"
+          onfocus="this.style.borderColor='var(--green)'"
+          onblur="this.style.borderColor='var(--border2)'"
+          onchange="runSearch()"/>
+        <select id="search-source"
+          style="background:var(--bg3);border:1px solid var(--border2);color:var(--text);
+          font-family:var(--font-mono);font-size:12px;padding:8px 12px;outline:none"
+          onchange="runSearch()">
+          <option value="">All Sources</option>
+          <option value="shopify">Shopify</option>
+          <option value="tiktok_shop">TikTok</option>
+          <option value="shopee">Shopee</option>
+        </select>
+        <select id="search-status"
+          style="background:var(--bg3);border:1px solid var(--border2);color:var(--text);
+          font-family:var(--font-mono);font-size:12px;padding:8px 12px;outline:none"
+          onchange="runSearch()">
+          <option value="">All Statuses</option>
+          <option value="sent_to_detrack">Synced</option>
+          <option value="cancelled">Cancelled</option>
+          <option value="detrack_failed">Failed</option>
+          <option value="detrack_failed_permanent">Perm. Failed</option>
+        </select>
+        <button class="action-btn retry" onclick="runSearch()">SEARCH</button>
+      </div>
+    </div>
+
+    <!-- SEARCH RESULTS -->
+    <div class="section" id="search-results-section" style="display:none;margin-bottom:20px">
+      <div class="section-header">
+        <div class="section-title">Search Results</div>
+        <div class="section-count" id="search-count">—</div>
+      </div>
+      <div id="search-table-wrap" class="table-wrap">
+        <div class="loading blink">SEARCHING...</div>
+      </div>
+    </div>
+
+
     <div class="section">
       <div class="section-header">
         <div class="section-title">Failed Orders</div>
@@ -647,8 +723,119 @@ async function apiFetch(url) {
 
 // ── LOAD ALL ──────────────────────────────────────────
 async function loadAll() {
-  await Promise.all([loadFailed(), loadRecent(), loadHealth()]);
+  await Promise.all([loadFailed(), loadRecent(), loadHealth(), loadStats()]);
 }
+
+// ── SOURCE STATS ──────────────────────────────────────
+async function loadStats() {
+  if (!apiKey) return;
+  try {
+    const data = await apiFetch('/orders/stats');
+    const by_source = data.by_source || {};
+    const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Singapore' });
+
+    // Source counts
+    let shopifyTotal = 0, tiktokTotal = 0, shopeeTotal = 0;
+    for (const [source, counts] of Object.entries(by_source)) {
+      if (source.includes('tiktok')) tiktokTotal += counts.total || 0;
+      else if (source.includes('shopee')) shopeeTotal += counts.total || 0;
+      else shopifyTotal += counts.total || 0;
+    }
+
+    document.getElementById('stat-shopify').textContent = shopifyTotal;
+    document.getElementById('stat-tiktok').textContent = tiktokTotal;
+    document.getElementById('stat-shopee').textContent = shopeeTotal;
+
+    // Completed today — fetch from search
+    try {
+      const todayData = await apiFetch(`/orders/search?date=${today}&status=sent_to_detrack&limit=200`);
+      const completedToday = (todayData.orders || []).filter(o => o.delivery_status === 'completed').length;
+      document.getElementById('stat-completed').textContent = completedToday;
+    } catch(e) {
+      document.getElementById('stat-completed').textContent = '—';
+    }
+
+  } catch(e) {
+    console.error('Stats error:', e);
+  }
+}
+
+// ── SEARCH ────────────────────────────────────────────
+async function runSearch() {
+  if (!apiKey) return;
+
+  const q = document.getElementById('search-q').value.trim();
+  const date = document.getElementById('search-date').value;
+  const source = document.getElementById('search-source').value;
+  const status = document.getElementById('search-status').value;
+
+  if (!q && !date && !source && !status) {
+    document.getElementById('search-results-section').style.display = 'none';
+    return;
+  }
+
+  document.getElementById('search-results-section').style.display = 'block';
+  document.getElementById('search-table-wrap').innerHTML = '<div class="loading blink">SEARCHING...</div>';
+
+  try {
+    const params = new URLSearchParams();
+    if (q) params.append('q', q);
+    if (date) params.append('date', date);
+    if (source) params.append('source', source);
+    if (status) params.append('status', status);
+    params.append('limit', '100');
+
+    const data = await apiFetch(`/orders/search?${params.toString()}`);
+    const orders = data.orders || [];
+    document.getElementById('search-count').textContent = `${orders.length} results`;
+    renderSearchTable(orders);
+  } catch(e) {
+    document.getElementById('search-table-wrap').innerHTML = `<div class="empty">Search error: ${e.message}</div>`;
+  }
+}
+
+function clearSearch() {
+  document.getElementById('search-q').value = '';
+  document.getElementById('search-date').value = '';
+  document.getElementById('search-source').value = '';
+  document.getElementById('search-status').value = '';
+  document.getElementById('search-results-section').style.display = 'none';
+}
+
+function renderSearchTable(orders) {
+  if (!orders.length) {
+    document.getElementById('search-table-wrap').innerHTML = `<div class="empty">No results found.</div>`;
+    return;
+  }
+
+  const rows = orders.map(o => `
+    <tr>
+      <td class="mono">#${o.id}</td>
+      <td>${sourceBadge(o.source)}</td>
+      <td class="mono">${o.source_order_id || '—'}</td>
+      <td>${o.customer_name || '—'}</td>
+      <td class="mono">${o.detrack_do_number || '—'}</td>
+      <td>${statusBadge(o.sync_status)}</td>
+      <td>${deliveryBadge(o.delivery_status)}</td>
+      <td class="mono" style="font-size:11px;color:var(--text3)">${o.delivery_date || '—'}</td>
+      <td class="mono" style="font-size:11px;color:var(--text3)">${o.created_at ? fmtDate(o.created_at) : '—'}</td>
+    </tr>
+  `).join('');
+
+  document.getElementById('search-table-wrap').innerHTML = `
+    <table>
+      <thead>
+        <tr>
+          <th>ID</th><th>Source</th><th>Order Ref</th><th>Customer</th>
+          <th>DO Number</th><th>Sync Status</th><th>Delivery</th>
+          <th>Del. Date</th><th>Created</th>
+        </tr>
+      </thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+}
+
+
 
 // ── HEALTH / STATS ────────────────────────────────────
 async function loadHealth() {
