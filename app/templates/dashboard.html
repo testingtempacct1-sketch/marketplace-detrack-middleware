@@ -687,6 +687,7 @@ async function loadHealth() {
 // ── FAILED ORDERS ─────────────────────────────────────
 async function loadFailed() {
   try {
+    if (!apiKey) return;
     const data = await apiFetch('/orders/failed');
     const orders = data.orders || [];
     document.getElementById('failed-count').textContent = `${orders.length} orders`;
