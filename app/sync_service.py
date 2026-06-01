@@ -472,6 +472,9 @@ def create_order_and_send_to_detrack(db: Session, order: StandardOrder) -> dict:
     detrack_payload = map_standard_order_to_detrack(order)
     shopify_fields = _shopify_fields(order)
 
+    # Use the resolved delivery date from the payload (SGT today if not provided)
+    resolved_delivery_date = detrack_payload["data"]["date"]
+
     order_sync = OrderSync(
         source=order.source,
         source_order_id=order.source_order_id,
@@ -484,7 +487,7 @@ def create_order_and_send_to_detrack(db: Session, order: StandardOrder) -> dict:
         postal_code=order.postal_code,
         items_json=_items_to_json(order),
         remarks=order.remarks,
-        delivery_date=order.delivery_date,
+        delivery_date=resolved_delivery_date,
         detrack_do_number=detrack_payload["data"]["do_number"],
         sync_status="pending",
         retry_count=0,
