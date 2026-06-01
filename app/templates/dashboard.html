@@ -671,7 +671,7 @@ async function loadHealth() {
 
     dotDb.className = `health-dot ${dbOk ? 'ok' : 'error'}`;
     dotDetrack.className = `health-dot ${detrackOk ? 'ok' : 'error'}`;
-    dotOverall.className = `health-dot ${overall === 'ok' ? 'ok' : 'error'}`;
+   dotOverall.className = `health-dot ${(overall || '').trim().toLowerCase() === 'ok' ? 'ok' : 'error'}`;
 
     document.getElementById('label-db').textContent = `Database: ${dbOk ? 'connected' : 'error — ' + (checks.database?.error || 'unknown')}`;
     document.getElementById('label-detrack').textContent = `Detrack API: ${detrackOk ? 'reachable' : 'error — ' + (checks.detrack_api?.error || 'unknown')}`;
