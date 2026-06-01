@@ -1,6 +1,9 @@
-from datetime import date
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from app.schemas import StandardOrder
+
+SGT = ZoneInfo("Asia/Singapore")
 
 
 def _get_order_number(order: StandardOrder) -> str:
@@ -29,9 +32,14 @@ def _build_detrack_do_number(order: StandardOrder) -> str:
     return f"ZF-{channel_code}-{order_number}"
 
 
+def get_delivery_date_sgt() -> str:
+    """Return today's date in Singapore Time (SGT, UTC+8) as YYYY-MM-DD."""
+    return datetime.now(SGT).strftime("%Y-%m-%d")
+
 
 def map_standard_order_to_detrack(order: StandardOrder) -> dict:
-    delivery_date = order.delivery_date or date.today().isoformat()
+    # Use order's delivery_date if provided, otherwise default to today in SGT
+    delivery_date = order.delivery_date or get_delivery_date_sgt()
 
     item_lines = [
         {
