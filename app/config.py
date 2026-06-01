@@ -18,9 +18,11 @@ class Settings(BaseSettings):
     shopify_fulfilment_dry_run: bool = True
     shopify_fulfilment_allowed: bool = False
 
-
-
     admin_api_key: str = ""
+
+    # Telegram alerts
+    telegram_bot_token: str = ""
+    telegram_chat_id: str = ""
 
     class Config:
         env_file = ".env"

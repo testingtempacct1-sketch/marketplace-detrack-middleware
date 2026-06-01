@@ -16,6 +16,7 @@ from app.mapper import map_standard_order_to_detrack
 from app.models import OrderSync
 from app.schemas import StandardOrder, StandardOrderItem
 from app.shopify_admin_client import ShopifyAdminAPIError, create_shopify_fulfilment
+from app.telegram_client import send_permanent_failure_alert, send_retry_success_alert
 
 logger = logging.getLogger(__name__)
 
@@ -680,6 +681,17 @@ def auto_retry_failed_detrack_jobs(db: Session) -> dict:
                 f"{order_sync.retry_count + 1}."
             )
 
+            # Send recovery alert if this was a retry (not first attempt)
+            if (order_sync.retry_count or 0) > 0:
+                send_retry_success_alert(
+                    order_sync_id=order_sync.id,
+                    source=order_sync.source,
+                    source_order_id=order_sync.source_order_id,
+                    customer_name=order_sync.customer_name,
+                    detrack_do_number=order_sync.detrack_do_number,
+                    retry_count=order_sync.retry_count,
+                )
+
         except Exception as exc:
             new_retry_count = (order_sync.retry_count or 0) + 1
             order_sync.retry_count = new_retry_count
@@ -694,6 +706,15 @@ def auto_retry_failed_detrack_jobs(db: Session) -> dict:
                 logger.warning(
                     f"[AutoRetry] Order {order_sync.id} permanently failed after "
                     f"{new_retry_count} attempts. Manual intervention required."
+                )
+                send_permanent_failure_alert(
+                    order_sync_id=order_sync.id,
+                    source=order_sync.source,
+                    source_order_id=order_sync.source_order_id,
+                    customer_name=order_sync.customer_name,
+                    detrack_do_number=order_sync.detrack_do_number,
+                    error_message=order_sync.error_message,
+                    retry_count=new_retry_count,
                 )
             else:
                 delay = _next_retry_delay(new_retry_count)
