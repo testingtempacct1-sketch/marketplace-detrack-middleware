@@ -1,5 +1,6 @@
 import json
-from datetime import datetime
+import logging
+from datetime import datetime, timedelta
 
 from sqlalchemy.orm import Session
 
@@ -15,6 +16,24 @@ from app.mapper import map_standard_order_to_detrack
 from app.models import OrderSync
 from app.schemas import StandardOrder, StandardOrderItem
 from app.shopify_admin_client import ShopifyAdminAPIError, create_shopify_fulfilment
+
+logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Retry configuration
+# ---------------------------------------------------------------------------
+
+MAX_RETRY_ATTEMPTS = 5
+
+# Delay in minutes after each failed attempt before next retry
+RETRY_DELAYS_MINUTES = [1, 5, 15, 30, 60]
+
+
+def _next_retry_delay(retry_count: int) -> int:
+    """Return delay in minutes for the given retry attempt (0-indexed)."""
+    if retry_count < len(RETRY_DELAYS_MINUTES):
+        return RETRY_DELAYS_MINUTES[retry_count]
+    return RETRY_DELAYS_MINUTES[-1]
 
 
 # ---------------------------------------------------------------------------
@@ -130,6 +149,9 @@ def _order_sync_to_dict(order_sync: OrderSync) -> dict:
         "error_message": order_sync.error_message,
         "remarks": order_sync.remarks,
         "delivery_date": order_sync.delivery_date,
+        "retry_count": order_sync.retry_count,
+        "last_retry_at": order_sync.last_retry_at.isoformat() if order_sync.last_retry_at else None,
+        "next_retry_at": order_sync.next_retry_at.isoformat() if order_sync.next_retry_at else None,
         "created_at": order_sync.created_at.isoformat() if order_sync.created_at else None,
         "updated_at": order_sync.updated_at.isoformat() if order_sync.updated_at else None,
     }
@@ -146,6 +168,37 @@ def _get_nested(payload: dict, *paths: tuple[str, ...]):
 
         if current not in (None, ""):
             return current
+
+    return None
+
+
+def _resolve_detrack_job(order_sync: OrderSync) -> dict | None:
+    """
+    Try to fetch the Detrack job for an order sync record.
+    First tries by detrack_job_id, then falls back to DO number search.
+    Returns the job dict or None if not found.
+    """
+    # Primary: look up by job ID
+    if order_sync.detrack_job_id:
+        try:
+            job = get_detrack_job(order_sync.detrack_job_id)
+            if job:
+                return job
+        except DetrackAPIError:
+            pass
+
+    # Fallback: search by DO number
+    if order_sync.detrack_do_number:
+        try:
+            job = find_detrack_job_by_do_number(order_sync.detrack_do_number)
+            if job:
+                logger.info(
+                    f"[resolve_detrack_job] Found job by DO number fallback: "
+                    f"{order_sync.detrack_do_number}"
+                )
+                return job
+        except DetrackAPIError:
+            pass
 
     return None
 
@@ -400,6 +453,7 @@ def create_order_and_send_to_detrack(db: Session, order: StandardOrder) -> dict:
         delivery_date=order.delivery_date,
         detrack_do_number=detrack_payload["data"]["do_number"],
         sync_status="pending",
+        retry_count=0,
     )
 
     db.add(order_sync)
@@ -441,20 +495,25 @@ def create_order_and_send_to_detrack(db: Session, order: StandardOrder) -> dict:
         order_sync.sync_status = "detrack_failed"
         order_sync.error_message = str(exc)
         order_sync.updated_at = datetime.utcnow()
+        order_sync.next_retry_at = datetime.utcnow() + timedelta(
+            minutes=_next_retry_delay(0)
+        )
         db.commit()
 
         return {
             "created": True,
             "sent_to_detrack": False,
-            "message": "Order saved, but Detrack creation failed.",
+            "message": "Order saved, but Detrack creation failed. Will auto-retry.",
             "order_sync_id": order_sync.id,
             "sync_status": order_sync.sync_status,
             "error": str(exc),
+            "next_retry_at": order_sync.next_retry_at.isoformat(),
             "detrack_payload": detrack_payload,
         }
 
 
 def retry_failed_detrack_sync(db: Session, order_sync_id: int) -> dict:
+    """Manual retry for a specific failed order."""
     order_sync = (
         db.query(OrderSync)
         .filter(OrderSync.id == order_sync_id)
@@ -502,6 +561,8 @@ def retry_failed_detrack_sync(db: Session, order_sync_id: int) -> dict:
         order_sync.error_message = None
         order_sync.detrack_do_number = detrack_payload["data"]["do_number"]
         order_sync.updated_at = datetime.utcnow()
+        order_sync.next_retry_at = None
+        order_sync.last_retry_at = datetime.utcnow()
 
         data = detrack_response.get("data") or detrack_response
         if isinstance(data, dict):
@@ -530,6 +591,11 @@ def retry_failed_detrack_sync(db: Session, order_sync_id: int) -> dict:
         order_sync.sync_status = "detrack_failed"
         order_sync.error_message = str(exc)
         order_sync.updated_at = datetime.utcnow()
+        order_sync.last_retry_at = datetime.utcnow()
+        order_sync.retry_count = (order_sync.retry_count or 0) + 1
+        order_sync.next_retry_at = datetime.utcnow() + timedelta(
+            minutes=_next_retry_delay(order_sync.retry_count)
+        )
         db.commit()
 
         return {
@@ -538,9 +604,114 @@ def retry_failed_detrack_sync(db: Session, order_sync_id: int) -> dict:
             "message": "Retry failed. Detrack still could not create the job.",
             "order_sync_id": order_sync.id,
             "sync_status": order_sync.sync_status,
+            "retry_count": order_sync.retry_count,
+            "next_retry_at": order_sync.next_retry_at.isoformat(),
             "error": str(exc),
             "detrack_payload": detrack_payload,
         }
+
+
+def auto_retry_failed_detrack_jobs(db: Session) -> dict:
+    """
+    Automatically retry all eligible failed Detrack jobs.
+    Called by the scheduler every 5 minutes.
+    Eligible = sync_status is detrack_failed AND next_retry_at is due AND retry_count < MAX.
+    """
+    now = datetime.utcnow()
+
+    eligible = (
+        db.query(OrderSync)
+        .filter(
+            OrderSync.sync_status == "detrack_failed",
+            OrderSync.retry_count < MAX_RETRY_ATTEMPTS,
+            OrderSync.next_retry_at <= now,
+        )
+        .all()
+    )
+
+    attempted = 0
+    succeeded = 0
+    failed = 0
+    permanent = 0
+
+    for order_sync in eligible:
+        attempted += 1
+
+        reconstructed_order = StandardOrder(
+            source=order_sync.source,
+            source_order_id=order_sync.source_order_id,
+            source_order_name=order_sync.shopify_order_name,
+            customer_name=order_sync.customer_name or "Unknown Customer",
+            phone=order_sync.phone or "",
+            address=order_sync.address or "",
+            postal_code=order_sync.postal_code,
+            items=_items_from_json(order_sync.items_json),
+            remarks=order_sync.remarks or "Auto-retried from middleware.",
+            delivery_date=order_sync.delivery_date,
+        )
+
+        detrack_payload = map_standard_order_to_detrack(reconstructed_order)
+
+        try:
+            detrack_response = create_detrack_job(detrack_payload)
+
+            order_sync.sync_status = "sent_to_detrack"
+            order_sync.delivery_status = "created"
+            order_sync.error_message = None
+            order_sync.detrack_do_number = detrack_payload["data"]["do_number"]
+            order_sync.updated_at = now
+            order_sync.last_retry_at = now
+            order_sync.next_retry_at = None
+
+            data = detrack_response.get("data") or detrack_response
+            if isinstance(data, dict):
+                order_sync.detrack_job_id = str(
+                    data.get("id")
+                    or data.get("job_id")
+                    or data.get("delivery_id")
+                    or ""
+                )
+
+            db.commit()
+            succeeded += 1
+
+            logger.info(
+                f"[AutoRetry] Order {order_sync.id} succeeded on attempt "
+                f"{order_sync.retry_count + 1}."
+            )
+
+        except Exception as exc:
+            new_retry_count = (order_sync.retry_count or 0) + 1
+            order_sync.retry_count = new_retry_count
+            order_sync.last_retry_at = now
+            order_sync.error_message = f"Auto-retry attempt {new_retry_count} failed: {exc}"
+            order_sync.updated_at = now
+
+            if new_retry_count >= MAX_RETRY_ATTEMPTS:
+                order_sync.sync_status = "detrack_failed_permanent"
+                order_sync.next_retry_at = None
+                permanent += 1
+                logger.warning(
+                    f"[AutoRetry] Order {order_sync.id} permanently failed after "
+                    f"{new_retry_count} attempts. Manual intervention required."
+                )
+            else:
+                delay = _next_retry_delay(new_retry_count)
+                order_sync.next_retry_at = now + timedelta(minutes=delay)
+                failed += 1
+                logger.warning(
+                    f"[AutoRetry] Order {order_sync.id} failed attempt {new_retry_count}. "
+                    f"Next retry in {delay} minutes."
+                )
+
+            db.commit()
+
+    return {
+        "attempted": attempted,
+        "succeeded": succeeded,
+        "failed": failed,
+        "permanent": permanent,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -578,59 +749,75 @@ def handle_shopify_order_cancelled(db: Session, payload: dict) -> dict:
     detrack_result = None
     detrack_status_at_cancellation = None
 
-    if order_sync.detrack_job_id:
-        try:
-            # Fetch current job from Detrack to decide delete vs on_hold
-            job = get_detrack_job(order_sync.detrack_job_id)
-            should_delete, detrack_status_at_cancellation = _should_delete_detrack_job(job)
+    # Resolve the Detrack job — try job_id first, fall back to DO number
+    try:
+        job = _resolve_detrack_job(order_sync)
 
-            if should_delete:
-                # Job not yet picked up by driver — delete cleanly
-                deleted = delete_detrack_job(order_sync.detrack_job_id)
-                detrack_action = "deleted"
-                detrack_result = {
-                    "deleted": deleted,
-                    "reason": (
-                        f"Job status was '{detrack_status_at_cancellation}' "
-                        "— deleted cleanly before driver pickup."
-                    ),
-                }
+        # Update detrack_job_id if we found it via fallback
+        if job and not order_sync.detrack_job_id:
+            resolved_job_id = str(job.get("id") or "")
+            if resolved_job_id:
+                order_sync.detrack_job_id = resolved_job_id
 
-                # Clean removal from middleware DB
-                db.delete(order_sync)
-                db.commit()
+        should_delete, detrack_status_at_cancellation = _should_delete_detrack_job(job)
 
-                return {
-                    "updated": True,
-                    "message": "Order and Detrack job deleted cleanly (driver had not yet picked up).",
-                    "shopify_order_id": shopify_order_id,
-                    "shopify_order_name": shopify_order_name,
-                    "detrack_action": detrack_action,
-                    "detrack_status_at_cancellation": detrack_status_at_cancellation,
-                    "detrack_result": detrack_result,
-                    "previous_sync_status": previous_sync_status,
-                    "previous_delivery_status": previous_delivery_status,
-                }
+        if should_delete:
+            job_id_to_use = order_sync.detrack_job_id or (
+                str(job.get("id")) if job else None
+            )
 
+            if job_id_to_use:
+                deleted = delete_detrack_job(job_id_to_use)
             else:
-                # Driver is already out for delivery — put on hold
-                source = order_sync.source or "shopify"
-                source_label = "TIKTOK" if "tiktok" in source.lower() else "SHOPIFY"
+                deleted = False
 
+            detrack_action = "deleted"
+            detrack_result = {
+                "deleted": deleted,
+                "reason": (
+                    f"Job status was '{detrack_status_at_cancellation}' "
+                    "— deleted cleanly before driver pickup."
+                ),
+            }
+
+            db.delete(order_sync)
+            db.commit()
+
+            return {
+                "updated": True,
+                "message": "Order and Detrack job deleted cleanly (driver had not yet picked up).",
+                "shopify_order_id": shopify_order_id,
+                "shopify_order_name": shopify_order_name,
+                "detrack_action": detrack_action,
+                "detrack_status_at_cancellation": detrack_status_at_cancellation,
+                "detrack_result": detrack_result,
+                "previous_sync_status": previous_sync_status,
+                "previous_delivery_status": previous_delivery_status,
+            }
+
+        else:
+            source = order_sync.source or "shopify"
+            source_label = "TIKTOK" if "tiktok" in source.lower() else "SHOPIFY"
+            job_id_to_use = order_sync.detrack_job_id or (
+                str(job.get("id")) if job else None
+            )
+
+            if job_id_to_use:
                 detrack_result = update_detrack_job_as_cancelled(
-                    job_id=order_sync.detrack_job_id,
+                    job_id=job_id_to_use,
                     do_number=order_sync.detrack_do_number,
                     reason=f"{source_label} order cancelled",
                     cancel_message=f"CANCELLED FROM {source_label} - DO NOT DELIVER",
                 )
                 detrack_action = "on_hold"
+            else:
+                detrack_action = "not_attempted"
+                detrack_result = {"reason": "No job ID or DO number available."}
 
-        except DetrackAPIError as exc:
-            detrack_action = "error"
-            detrack_result = {"error": str(exc)}
+    except DetrackAPIError as exc:
+        detrack_action = "error"
+        detrack_result = {"error": str(exc)}
 
-    # Update DB record for on_hold or error cases
-    # (delete case already returned above)
     order_sync.sync_status = "cancelled"
     order_sync.delivery_status = "cancelled"
     order_sync.error_message = (
@@ -706,7 +893,6 @@ def cancel_shopee_detrack_job(shopee_order_sn: str) -> dict:
             "job": job,
         }
 
-    # Apply same delete vs on_hold logic for Shopee jobs
     should_delete, detrack_status_at_cancellation = _should_delete_detrack_job(job)
 
     if should_delete:

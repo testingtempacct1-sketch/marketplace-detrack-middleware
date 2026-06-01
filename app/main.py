@@ -25,6 +25,7 @@ from app.sync_service import (
 )
 from app.webhook_security import verify_shopify_hmac
 from app.db_maintenance import ensure_order_sync_schema
+from app.scheduler import start_scheduler, stop_scheduler
 from app.shopify_admin_client import (
     ShopifyAdminAPIError,
     build_shopify_fulfilment_dry_run,
@@ -32,6 +33,7 @@ from app.shopify_admin_client import (
     get_shopify_fulfilment_plan,
     get_shopify_order_by_id,
 )
+from app.models import OrderSync
 
 
 Base.metadata.create_all(bind=engine)
@@ -41,11 +43,34 @@ ensure_order_sync_schema()
 app = FastAPI(title=settings.app_name)
 
 
+@app.on_event("startup")
+def on_startup():
+    start_scheduler()
+
+
+@app.on_event("shutdown")
+def on_shutdown():
+    stop_scheduler()
+
+
 @app.get("/health")
-def health_check():
+def health_check(db: Session = Depends(get_db)):
+    failed_count = (
+        db.query(OrderSync)
+        .filter(OrderSync.sync_status == "detrack_failed")
+        .count()
+    )
+    permanent_count = (
+        db.query(OrderSync)
+        .filter(OrderSync.sync_status == "detrack_failed_permanent")
+        .count()
+    )
+
     return {
         "status": "ok",
         "service": settings.app_name,
+        "detrack_failed_pending_retry": failed_count,
+        "detrack_failed_permanent": permanent_count,
     }
 
 
@@ -58,6 +83,44 @@ def recent_orders(
     return {
         "count": limit,
         "orders": list_recent_order_syncs(db, limit=limit),
+    }
+
+
+@app.get("/orders/failed")
+def failed_orders(
+    _: bool = Depends(require_admin_key),
+    db: Session = Depends(get_db),
+):
+    """List all orders that have permanently failed and need manual intervention."""
+    records = (
+        db.query(OrderSync)
+        .filter(
+            OrderSync.sync_status.in_(
+                ["detrack_failed", "detrack_failed_permanent"]
+            )
+        )
+        .order_by(OrderSync.id.desc())
+        .all()
+    )
+
+    return {
+        "count": len(records),
+        "orders": [
+            {
+                "id": r.id,
+                "source": r.source,
+                "source_order_id": r.source_order_id,
+                "customer_name": r.customer_name,
+                "detrack_do_number": r.detrack_do_number,
+                "sync_status": r.sync_status,
+                "retry_count": r.retry_count,
+                "last_retry_at": r.last_retry_at.isoformat() if r.last_retry_at else None,
+                "next_retry_at": r.next_retry_at.isoformat() if r.next_retry_at else None,
+                "error_message": r.error_message,
+                "created_at": r.created_at.isoformat() if r.created_at else None,
+            }
+            for r in records
+        ],
     }
 
 

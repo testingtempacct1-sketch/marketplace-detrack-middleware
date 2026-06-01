@@ -16,7 +16,6 @@ class OrderSync(Base):
     shopify_order_name = Column(String(100), nullable=True)
     shopify_order_admin_url = Column(String(255), nullable=True)
 
-
     customer_name = Column(String(255), nullable=True)
     phone = Column(String(50), nullable=True)
     address = Column(Text, nullable=True)
@@ -32,6 +31,11 @@ class OrderSync(Base):
     sync_status = Column(String(50), nullable=False, default="pending")
     delivery_status = Column(String(100), nullable=True)
     error_message = Column(Text, nullable=True)
+
+    # Retry tracking
+    retry_count = Column(Integer, nullable=False, default=0)
+    last_retry_at = Column(DateTime, nullable=True)
+    next_retry_at = Column(DateTime, nullable=True)
 
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow)
