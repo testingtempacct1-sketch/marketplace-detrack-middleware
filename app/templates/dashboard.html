@@ -1164,6 +1164,8 @@ function detrackLink(doNumber) {
     text-decoration:none;border-bottom:1px solid rgba(0,255,136,0.3)"
     title="Open in Detrack">${doNumber} ↗</a>`;
 }
+
+function sourceBadge(source) {
   const s = (source || '').toLowerCase();
   if (s.includes('tiktok')) return `<span class="badge badge-purple">TIKTOK</span>`;
   if (s.includes('shopee')) return `<span class="badge badge-amber">SHOPEE</span>`;
