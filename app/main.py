@@ -1,6 +1,8 @@
 import json
+from pathlib import Path
 
 from fastapi import Body, Depends, FastAPI, Header, HTTPException, Query, Request
+from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 
 from app.admin_security import require_admin_key
@@ -72,6 +74,12 @@ def health_check(db: Session = Depends(get_db)):
         "detrack_failed_pending_retry": failed_count,
         "detrack_failed_permanent": permanent_count,
     }
+
+
+@app.get("/dashboard", response_class=HTMLResponse)
+def dashboard():
+    html_path = Path(__file__).parent / "templates" / "dashboard.html"
+    return HTMLResponse(content=html_path.read_text(encoding="utf-8"))
 
 
 @app.get("/orders/recent")

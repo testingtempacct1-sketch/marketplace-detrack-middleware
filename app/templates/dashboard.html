@@ -1,0 +1,800 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ZZF Middleware Dashboard</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0a0a0a;
+    --bg2: #111111;
+    --bg3: #1a1a1a;
+    --border: #2a2a2a;
+    --border2: #333333;
+    --text: #e8e8e8;
+    --text2: #888888;
+    --text3: #555555;
+    --green: #00ff88;
+    --green2: #00cc6a;
+    --red: #ff4444;
+    --amber: #ffaa00;
+    --blue: #4488ff;
+    --purple: #aa88ff;
+    --font-mono: 'IBM Plex Mono', monospace;
+    --font-sans: 'IBM Plex Sans', sans-serif;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-sans);
+    font-size: 14px;
+    min-height: 100vh;
+  }
+
+  /* LOGIN */
+  #login-screen {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    background: var(--bg);
+  }
+
+  .login-box {
+    width: 380px;
+    border: 1px solid var(--border2);
+    background: var(--bg2);
+    padding: 40px;
+  }
+
+  .login-logo {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.2em;
+    color: var(--green);
+    text-transform: uppercase;
+    margin-bottom: 8px;
+  }
+
+  .login-title {
+    font-size: 22px;
+    font-weight: 600;
+    margin-bottom: 32px;
+    color: var(--text);
+  }
+
+  .login-box input {
+    width: 100%;
+    background: var(--bg3);
+    border: 1px solid var(--border2);
+    color: var(--text);
+    font-family: var(--font-mono);
+    font-size: 13px;
+    padding: 12px 14px;
+    margin-bottom: 12px;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+
+  .login-box input:focus { border-color: var(--green); }
+
+  .login-box button {
+    width: 100%;
+    background: var(--green);
+    color: #000;
+    border: none;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    padding: 13px;
+    cursor: pointer;
+    transition: background 0.2s;
+    margin-top: 4px;
+  }
+
+  .login-box button:hover { background: var(--green2); }
+
+  .login-error {
+    color: var(--red);
+    font-size: 12px;
+    font-family: var(--font-mono);
+    margin-top: 10px;
+    display: none;
+  }
+
+  /* DASHBOARD */
+  #dashboard { display: none; }
+
+  .topbar {
+    background: var(--bg2);
+    border-bottom: 1px solid var(--border);
+    padding: 0 24px;
+    height: 52px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+
+  .topbar-left {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+
+  .topbar-logo {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.2em;
+    color: var(--green);
+    text-transform: uppercase;
+  }
+
+  .topbar-divider {
+    width: 1px;
+    height: 20px;
+    background: var(--border2);
+  }
+
+  .topbar-title {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text2);
+  }
+
+  .topbar-right {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+
+  .refresh-indicator {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text3);
+  }
+
+  .refresh-indicator.active { color: var(--green); }
+
+  .logout-btn {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text3);
+    background: none;
+    border: 1px solid var(--border2);
+    padding: 5px 12px;
+    cursor: pointer;
+    color: var(--text2);
+    transition: all 0.2s;
+  }
+
+  .logout-btn:hover { border-color: var(--text2); color: var(--text); }
+
+  .main {
+    padding: 24px;
+    max-width: 1400px;
+    margin: 0 auto;
+  }
+
+  /* STATS */
+  .stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 12px;
+    margin-bottom: 28px;
+  }
+
+  .stat-card {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    padding: 20px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .stat-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 2px;
+  }
+
+  .stat-card.green::before { background: var(--green); }
+  .stat-card.red::before { background: var(--red); }
+  .stat-card.amber::before { background: var(--amber); }
+  .stat-card.blue::before { background: var(--blue); }
+  .stat-card.purple::before { background: var(--purple); }
+
+  .stat-label {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--text3);
+    margin-bottom: 10px;
+  }
+
+  .stat-value {
+    font-family: var(--font-mono);
+    font-size: 32px;
+    font-weight: 600;
+    line-height: 1;
+  }
+
+  .stat-card.green .stat-value { color: var(--green); }
+  .stat-card.red .stat-value { color: var(--red); }
+  .stat-card.amber .stat-value { color: var(--amber); }
+  .stat-card.blue .stat-value { color: var(--blue); }
+  .stat-card.purple .stat-value { color: var(--purple); }
+
+  /* SECTIONS */
+  .section {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    margin-bottom: 20px;
+  }
+
+  .section-header {
+    padding: 14px 20px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .section-title {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--text2);
+  }
+
+  .section-count {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text3);
+  }
+
+  /* TABLE */
+  .table-wrap { overflow-x: auto; }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+
+  th {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--text3);
+    padding: 10px 20px;
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+    white-space: nowrap;
+  }
+
+  td {
+    padding: 11px 20px;
+    border-bottom: 1px solid var(--border);
+    color: var(--text2);
+    vertical-align: middle;
+  }
+
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: var(--bg3); }
+
+  td.mono {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--text);
+  }
+
+  /* BADGES */
+  .badge {
+    display: inline-block;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.05em;
+    padding: 3px 8px;
+    border-radius: 2px;
+    white-space: nowrap;
+  }
+
+  .badge-green { background: rgba(0,255,136,0.1); color: var(--green); border: 1px solid rgba(0,255,136,0.2); }
+  .badge-red { background: rgba(255,68,68,0.1); color: var(--red); border: 1px solid rgba(255,68,68,0.2); }
+  .badge-amber { background: rgba(255,170,0,0.1); color: var(--amber); border: 1px solid rgba(255,170,0,0.2); }
+  .badge-blue { background: rgba(68,136,255,0.1); color: var(--blue); border: 1px solid rgba(68,136,255,0.2); }
+  .badge-gray { background: rgba(136,136,136,0.1); color: var(--text2); border: 1px solid var(--border2); }
+  .badge-purple { background: rgba(170,136,255,0.1); color: var(--purple); border: 1px solid rgba(170,136,255,0.2); }
+
+  /* ACTIONS */
+  .action-btn {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.05em;
+    padding: 5px 10px;
+    border: 1px solid var(--border2);
+    background: none;
+    color: var(--text2);
+    cursor: pointer;
+    transition: all 0.15s;
+    margin-right: 4px;
+  }
+
+  .action-btn:hover { border-color: var(--text2); color: var(--text); }
+  .action-btn.retry:hover { border-color: var(--green); color: var(--green); }
+  .action-btn.danger:hover { border-color: var(--red); color: var(--red); }
+  .action-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+
+  /* EMPTY STATE */
+  .empty {
+    padding: 40px 20px;
+    text-align: center;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--text3);
+  }
+
+  /* DETRACK STATUS GRID */
+  .status-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: 1px;
+    background: var(--border);
+  }
+
+  .status-item {
+    background: var(--bg2);
+    padding: 16px 20px;
+  }
+
+  .status-item-label {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--text3);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    margin-bottom: 6px;
+  }
+
+  .status-item-count {
+    font-family: var(--font-mono);
+    font-size: 22px;
+    font-weight: 600;
+    color: var(--text);
+  }
+
+  /* TOAST */
+  #toast {
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    background: var(--bg3);
+    border: 1px solid var(--border2);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    padding: 12px 20px;
+    opacity: 0;
+    transition: opacity 0.3s;
+    z-index: 999;
+    pointer-events: none;
+    max-width: 320px;
+  }
+
+  #toast.show { opacity: 1; }
+  #toast.success { border-color: var(--green); color: var(--green); }
+  #toast.error { border-color: var(--red); color: var(--red); }
+
+  /* LOADING */
+  .loading {
+    padding: 30px 20px;
+    text-align: center;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text3);
+    letter-spacing: 0.1em;
+  }
+
+  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.3} }
+  .blink { animation: blink 1.2s infinite; }
+</style>
+</head>
+<body>
+
+<!-- LOGIN -->
+<div id="login-screen">
+  <div class="login-box">
+    <div class="login-logo">ZEN ZU FU</div>
+    <div class="login-title">Middleware Dashboard</div>
+    <input type="password" id="api-key-input" placeholder="Enter admin API key" />
+    <button onclick="login()">ACCESS DASHBOARD</button>
+    <div class="login-error" id="login-error">Invalid API key. Try again.</div>
+  </div>
+</div>
+
+<!-- DASHBOARD -->
+<div id="dashboard">
+  <div class="topbar">
+    <div class="topbar-left">
+      <div class="topbar-logo">ZEN ZU FU</div>
+      <div class="topbar-divider"></div>
+      <div class="topbar-title">Middleware Dashboard</div>
+    </div>
+    <div class="topbar-right">
+      <div class="refresh-indicator" id="refresh-indicator">Auto-refresh in <span id="countdown">30</span>s</div>
+      <button class="logout-btn" onclick="logout()">LOGOUT</button>
+    </div>
+  </div>
+
+  <div class="main">
+    <!-- STATS -->
+    <div class="stats-grid" id="stats-grid">
+      <div class="stat-card green">
+        <div class="stat-label">Synced to Detrack</div>
+        <div class="stat-value" id="stat-synced">—</div>
+      </div>
+      <div class="stat-card blue">
+        <div class="stat-label">Total Orders</div>
+        <div class="stat-value" id="stat-total">—</div>
+      </div>
+      <div class="stat-card amber">
+        <div class="stat-label">Pending Retry</div>
+        <div class="stat-value" id="stat-retry">—</div>
+      </div>
+      <div class="stat-card red">
+        <div class="stat-label">Perm. Failed</div>
+        <div class="stat-value" id="stat-perm">—</div>
+      </div>
+      <div class="stat-card purple">
+        <div class="stat-label">Cancelled</div>
+        <div class="stat-value" id="stat-cancelled">—</div>
+      </div>
+    </div>
+
+    <!-- FAILED ORDERS -->
+    <div class="section">
+      <div class="section-header">
+        <div class="section-title">Failed Orders</div>
+        <div class="section-count" id="failed-count">—</div>
+      </div>
+      <div id="failed-table-wrap" class="table-wrap">
+        <div class="loading blink">LOADING...</div>
+      </div>
+    </div>
+
+    <!-- RECENT ORDERS -->
+    <div class="section">
+      <div class="section-header">
+        <div class="section-title">Recent Orders</div>
+        <div class="section-count" id="recent-count">—</div>
+      </div>
+      <div id="recent-table-wrap" class="table-wrap">
+        <div class="loading blink">LOADING...</div>
+      </div>
+    </div>
+
+    <!-- DETRACK STATUS BREAKDOWN -->
+    <div class="section">
+      <div class="section-header">
+        <div class="section-title">Detrack Status Breakdown</div>
+      </div>
+      <div id="detrack-status-wrap">
+        <div class="loading blink">LOADING...</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- TOAST -->
+<div id="toast"></div>
+
+<script>
+let apiKey = '';
+let refreshTimer = null;
+let countdownTimer = null;
+let countdown = 30;
+
+// ── AUTH ──────────────────────────────────────────────
+function login() {
+  const key = document.getElementById('api-key-input').value.trim();
+  if (!key) return;
+
+  fetch('/orders/recent?limit=1', {
+    headers: { 'X-Admin-Key': key }
+  }).then(r => {
+    if (r.ok) {
+      apiKey = key;
+      sessionStorage.setItem('admin_key', key);
+      document.getElementById('login-screen').style.display = 'none';
+      document.getElementById('dashboard').style.display = 'block';
+      loadAll();
+      startAutoRefresh();
+    } else {
+      document.getElementById('login-error').style.display = 'block';
+    }
+  }).catch(() => {
+    document.getElementById('login-error').style.display = 'block';
+  });
+}
+
+function logout() {
+  apiKey = '';
+  sessionStorage.removeItem('admin_key');
+  clearInterval(refreshTimer);
+  clearInterval(countdownTimer);
+  document.getElementById('dashboard').style.display = 'none';
+  document.getElementById('login-screen').style.display = 'flex';
+  document.getElementById('api-key-input').value = '';
+  document.getElementById('login-error').style.display = 'none';
+}
+
+document.getElementById('api-key-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter') login();
+});
+
+// Auto-login if key in session
+const savedKey = sessionStorage.getItem('admin_key');
+if (savedKey) {
+  apiKey = savedKey;
+  document.getElementById('login-screen').style.display = 'none';
+  document.getElementById('dashboard').style.display = 'block';
+  loadAll();
+  startAutoRefresh();
+}
+
+// ── AUTO REFRESH ──────────────────────────────────────
+function startAutoRefresh() {
+  countdown = 30;
+  clearInterval(refreshTimer);
+  clearInterval(countdownTimer);
+
+  countdownTimer = setInterval(() => {
+    countdown--;
+    document.getElementById('countdown').textContent = countdown;
+    if (countdown <= 5) {
+      document.getElementById('refresh-indicator').classList.add('active');
+    }
+    if (countdown <= 0) {
+      countdown = 30;
+      document.getElementById('refresh-indicator').classList.remove('active');
+      loadAll();
+    }
+  }, 1000);
+}
+
+// ── FETCH HELPERS ─────────────────────────────────────
+async function apiFetch(url) {
+  const r = await fetch(url, { headers: { 'X-Admin-Key': apiKey } });
+  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  return r.json();
+}
+
+// ── LOAD ALL ──────────────────────────────────────────
+async function loadAll() {
+  await Promise.all([loadFailed(), loadRecent(), loadHealth()]);
+}
+
+// ── HEALTH / STATS ────────────────────────────────────
+async function loadHealth() {
+  try {
+    const data = await fetch('/health').then(r => r.json());
+    document.getElementById('stat-retry').textContent = data.detrack_failed_pending_retry ?? '0';
+    document.getElementById('stat-perm').textContent = data.detrack_failed_permanent ?? '0';
+  } catch(e) {}
+}
+
+// ── FAILED ORDERS ─────────────────────────────────────
+async function loadFailed() {
+  try {
+    const data = await apiFetch('/orders/failed');
+    const orders = data.orders || [];
+    document.getElementById('failed-count').textContent = `${orders.length} orders`;
+    renderFailedTable(orders);
+    updateStats(orders, 'failed');
+  } catch(e) {
+    document.getElementById('failed-table-wrap').innerHTML = `<div class="empty">Error loading failed orders.</div>`;
+  }
+}
+
+function renderFailedTable(orders) {
+  if (!orders.length) {
+    document.getElementById('failed-table-wrap').innerHTML = `<div class="empty">✓ No failed orders</div>`;
+    return;
+  }
+
+  const rows = orders.map(o => `
+    <tr>
+      <td class="mono">#${o.id}</td>
+      <td>${sourceBadge(o.source)}</td>
+      <td class="mono">${o.source_order_id || '—'}</td>
+      <td>${o.customer_name || '—'}</td>
+      <td class="mono">${o.detrack_do_number || '—'}</td>
+      <td>${statusBadge(o.sync_status)}</td>
+      <td class="mono">${o.retry_count ?? 0}/5</td>
+      <td class="mono" style="color:var(--text3);font-size:11px">${o.next_retry_at ? fmtDate(o.next_retry_at) : '—'}</td>
+      <td style="color:var(--text3);font-size:11px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${o.error_message || '—'}</td>
+      <td>
+        <button class="action-btn retry" onclick="retryOrder(${o.id}, this)">RETRY</button>
+      </td>
+    </tr>
+  `).join('');
+
+  document.getElementById('failed-table-wrap').innerHTML = `
+    <table>
+      <thead>
+        <tr>
+          <th>ID</th><th>Source</th><th>Order Ref</th><th>Customer</th>
+          <th>DO Number</th><th>Status</th><th>Retries</th>
+          <th>Next Retry</th><th>Error</th><th>Action</th>
+        </tr>
+      </thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+}
+
+// ── RECENT ORDERS ─────────────────────────────────────
+async function loadRecent() {
+  try {
+    const data = await apiFetch('/orders/recent?limit=50');
+    const orders = data.orders || [];
+    document.getElementById('recent-count').textContent = `${orders.length} orders`;
+    renderRecentTable(orders);
+    updateStatsFromRecent(orders);
+    renderDetrackBreakdown(orders);
+  } catch(e) {
+    document.getElementById('recent-table-wrap').innerHTML = `<div class="empty">Error loading recent orders.</div>`;
+  }
+}
+
+function renderRecentTable(orders) {
+  if (!orders.length) {
+    document.getElementById('recent-table-wrap').innerHTML = `<div class="empty">No orders yet.</div>`;
+    return;
+  }
+
+  const rows = orders.map(o => `
+    <tr>
+      <td class="mono">#${o.id}</td>
+      <td>${sourceBadge(o.source)}</td>
+      <td class="mono">${o.source_order_id || '—'}</td>
+      <td>${o.customer_name || '—'}</td>
+      <td class="mono">${o.detrack_do_number || '—'}</td>
+      <td>${statusBadge(o.sync_status)}</td>
+      <td>${deliveryBadge(o.delivery_status)}</td>
+      <td class="mono" style="font-size:11px;color:var(--text3)">${o.delivery_date || '—'}</td>
+      <td class="mono" style="font-size:11px;color:var(--text3)">${o.created_at ? fmtDate(o.created_at) : '—'}</td>
+    </tr>
+  `).join('');
+
+  document.getElementById('recent-table-wrap').innerHTML = `
+    <table>
+      <thead>
+        <tr>
+          <th>ID</th><th>Source</th><th>Order Ref</th><th>Customer</th>
+          <th>DO Number</th><th>Sync Status</th><th>Delivery</th>
+          <th>Del. Date</th><th>Created</th>
+        </tr>
+      </thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+}
+
+// ── DETRACK BREAKDOWN ─────────────────────────────────
+function renderDetrackBreakdown(orders) {
+  const counts = {};
+  orders.forEach(o => {
+    const s = o.delivery_status || 'unknown';
+    counts[s] = (counts[s] || 0) + 1;
+  });
+
+  if (!Object.keys(counts).length) {
+    document.getElementById('detrack-status-wrap').innerHTML = `<div class="empty">No data.</div>`;
+    return;
+  }
+
+  const items = Object.entries(counts)
+    .sort((a, b) => b[1] - a[1])
+    .map(([status, count]) => `
+      <div class="status-item">
+        <div class="status-item-label">${status}</div>
+        <div class="status-item-count">${count}</div>
+      </div>
+    `).join('');
+
+  document.getElementById('detrack-status-wrap').innerHTML = `<div class="status-grid">${items}</div>`;
+}
+
+// ── STATS ─────────────────────────────────────────────
+function updateStatsFromRecent(orders) {
+  const total = orders.length;
+  const synced = orders.filter(o => o.sync_status === 'sent_to_detrack').length;
+  const cancelled = orders.filter(o => o.sync_status === 'cancelled').length;
+
+  document.getElementById('stat-total').textContent = total;
+  document.getElementById('stat-synced').textContent = synced;
+  document.getElementById('stat-cancelled').textContent = cancelled;
+}
+
+// ── ACTIONS ───────────────────────────────────────────
+async function retryOrder(id, btn) {
+  btn.disabled = true;
+  btn.textContent = '...';
+  try {
+    const r = await fetch(`/orders/retry-failed/${id}`, {
+      method: 'POST',
+      headers: { 'X-Admin-Key': apiKey }
+    });
+    const data = await r.json();
+    if (data.sent_to_detrack) {
+      showToast('✓ Order retried successfully', 'success');
+    } else {
+      showToast(`✗ Retry failed: ${data.message}`, 'error');
+    }
+    await loadAll();
+  } catch(e) {
+    showToast('✗ Request failed', 'error');
+    btn.disabled = false;
+    btn.textContent = 'RETRY';
+  }
+}
+
+// ── HELPERS ───────────────────────────────────────────
+function sourceBadge(source) {
+  const s = (source || '').toLowerCase();
+  if (s.includes('tiktok')) return `<span class="badge badge-purple">TIKTOK</span>`;
+  if (s.includes('shopee')) return `<span class="badge badge-amber">SHOPEE</span>`;
+  return `<span class="badge badge-blue">SHOPIFY</span>`;
+}
+
+function statusBadge(status) {
+  const s = (status || '').toLowerCase();
+  if (s === 'sent_to_detrack') return `<span class="badge badge-green">SYNCED</span>`;
+  if (s === 'cancelled') return `<span class="badge badge-gray">CANCELLED</span>`;
+  if (s === 'detrack_failed') return `<span class="badge badge-amber">FAILED</span>`;
+  if (s === 'detrack_failed_permanent') return `<span class="badge badge-red">PERM FAILED</span>`;
+  if (s === 'pending') return `<span class="badge badge-blue">PENDING</span>`;
+  return `<span class="badge badge-gray">${status || '—'}</span>`;
+}
+
+function deliveryBadge(status) {
+  const s = (status || '').toLowerCase();
+  if (s === 'completed') return `<span class="badge badge-green">COMPLETED</span>`;
+  if (s === 'cancelled') return `<span class="badge badge-gray">CANCELLED</span>`;
+  if (s === 'on_hold') return `<span class="badge badge-amber">ON HOLD</span>`;
+  if (s === 'failed') return `<span class="badge badge-red">FAILED</span>`;
+  if (s === 'created' || s === 'info_recv') return `<span class="badge badge-blue">INFO RECV</span>`;
+  if (!status) return `<span class="badge badge-gray">—</span>`;
+  return `<span class="badge badge-gray">${status}</span>`;
+}
+
+function fmtDate(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  return d.toLocaleString('en-SG', {
+    day: '2-digit', month: 'short',
+    hour: '2-digit', minute: '2-digit',
+    hour12: false, timeZone: 'Asia/Singapore'
+  });
+}
+
+function showToast(msg, type) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = `show ${type}`;
+  setTimeout(() => { t.className = ''; }, 3500);
+}
+</script>
+</body>
+</html>
