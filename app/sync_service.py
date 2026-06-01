@@ -460,10 +460,16 @@ def create_order_and_send_to_detrack(db: Session, order: StandardOrder) -> dict:
     )
 
     if existing:
+        logger.info(
+            f"[Dedup] Duplicate webhook detected — "
+            f"source={order.source}, source_order_id={order.source_order_id}, "
+            f"existing_id={existing.id}, sync_status={existing.sync_status}"
+        )
         return {
             "created": False,
             "sent_to_detrack": False,
             "message": "Order already exists. Skipping duplicate.",
+            "duplicate": True,
             "order_sync_id": existing.id,
             "sync_status": existing.sync_status,
             "detrack_do_number": existing.detrack_do_number,

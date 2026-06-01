@@ -410,7 +410,34 @@
   @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.3} }
   .blink { animation: blink 1.2s infinite; }
 
-  /* LOG ROWS */
+  /* HEALTH BADGES */
+  .health-row {
+    display: flex;
+    gap: 12px;
+    padding: 14px 20px;
+    border-bottom: 1px solid var(--border);
+    flex-wrap: wrap;
+  }
+
+  .health-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text2);
+  }
+
+  .health-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--text3);
+  }
+
+  .health-dot.ok { background: var(--green); }
+  .health-dot.error { background: var(--red); }
+  .health-dot.checking { background: var(--amber); }
   .log-row td { background: var(--bg); padding: 0 !important; }
   .log-inner { padding: 0 20px 16px 40px; }
   .log-timeline { border-left: 1px solid var(--border2); padding-left: 16px; margin-top: 8px; }
@@ -457,6 +484,21 @@
     <div class="topbar-right">
       <div class="refresh-indicator" id="refresh-indicator">Auto-refresh in <span id="countdown">30</span>s</div>
       <button class="logout-btn" onclick="logout()">LOGOUT</button>
+    </div>
+  </div>
+
+  <div class="health-row" id="health-row">
+    <div class="health-item">
+      <div class="health-dot checking" id="dot-db"></div>
+      <span id="label-db">Database: checking...</span>
+    </div>
+    <div class="health-item">
+      <div class="health-dot checking" id="dot-detrack"></div>
+      <span id="label-detrack">Detrack API: checking...</span>
+    </div>
+    <div class="health-item">
+      <div class="health-dot" id="dot-overall" style="background:var(--text3)"></div>
+      <span id="label-overall">System: checking...</span>
     </div>
   </div>
 
@@ -612,9 +654,33 @@ async function loadAll() {
 async function loadHealth() {
   try {
     const data = await fetch('/health').then(r => r.json());
+
+    // Update stat cards
     document.getElementById('stat-retry').textContent = data.detrack_failed_pending_retry ?? '0';
     document.getElementById('stat-perm').textContent = data.detrack_failed_permanent ?? '0';
-  } catch(e) {}
+
+    // Update health bar
+    const checks = data.checks || {};
+    const dbOk = checks.database?.ok;
+    const detrackOk = checks.detrack_api?.ok;
+    const overall = data.status;
+
+    const dotDb = document.getElementById('dot-db');
+    const dotDetrack = document.getElementById('dot-detrack');
+    const dotOverall = document.getElementById('dot-overall');
+
+    dotDb.className = `health-dot ${dbOk ? 'ok' : 'error'}`;
+    dotDetrack.className = `health-dot ${detrackOk ? 'ok' : 'error'}`;
+    dotOverall.className = `health-dot ${overall === 'ok' ? 'ok' : 'error'}`;
+
+    document.getElementById('label-db').textContent = `Database: ${dbOk ? 'connected' : 'error — ' + (checks.database?.error || 'unknown')}`;
+    document.getElementById('label-detrack').textContent = `Detrack API: ${detrackOk ? 'reachable' : 'error — ' + (checks.detrack_api?.error || 'unknown')}`;
+    document.getElementById('label-overall').textContent = `System: ${overall}`;
+
+  } catch(e) {
+    document.getElementById('label-overall').textContent = 'System: unreachable';
+    document.getElementById('dot-overall').className = 'health-dot error';
+  }
 }
 
 // ── FAILED ORDERS ─────────────────────────────────────
