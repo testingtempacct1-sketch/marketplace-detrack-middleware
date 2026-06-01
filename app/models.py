@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Column, DateTime, Integer, String, Text, UniqueConstraint
+from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
 
 from app.database import Base
 
@@ -43,3 +43,21 @@ class OrderSync(Base):
     __table_args__ = (
         UniqueConstraint("source", "source_order_id", name="uq_source_order"),
     )
+
+
+class OrderSyncLog(Base):
+    __tablename__ = "order_sync_log"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    order_sync_id = Column(Integer, ForeignKey("order_sync.id", ondelete="CASCADE"), nullable=False, index=True)
+
+    # "sync" or "delivery"
+    log_type = Column(String(20), nullable=False)
+
+    from_status = Column(String(100), nullable=True)
+    to_status = Column(String(100), nullable=True)
+
+    note = Column(Text, nullable=True)
+
+    created_at = Column(DateTime, default=datetime.utcnow)

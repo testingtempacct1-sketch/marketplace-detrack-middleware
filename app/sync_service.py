@@ -13,7 +13,7 @@ from app.detrack_client import (
     update_detrack_job_as_cancelled,
 )
 from app.mapper import map_standard_order_to_detrack
-from app.models import OrderSync
+from app.models import OrderSync, OrderSyncLog
 from app.schemas import StandardOrder, StandardOrderItem
 from app.shopify_admin_client import ShopifyAdminAPIError, create_shopify_fulfilment
 from app.telegram_client import send_permanent_failure_alert, send_retry_success_alert
@@ -173,6 +173,34 @@ def _get_nested(payload: dict, *paths: tuple[str, ...]):
     return None
 
 
+def _log_status_change(
+    db: Session,
+    order_sync_id: int,
+    log_type: str,
+    from_status: str | None,
+    to_status: str | None,
+    note: str | None = None,
+) -> None:
+    """
+    Record a status change in order_sync_log.
+    log_type: "sync" or "delivery"
+    Never raises — logging should never break the main flow.
+    """
+    try:
+        entry = OrderSyncLog(
+            order_sync_id=order_sync_id,
+            log_type=log_type,
+            from_status=from_status,
+            to_status=to_status,
+            note=note,
+            created_at=datetime.utcnow(),
+        )
+        db.add(entry)
+        db.flush()
+    except Exception as exc:
+        logger.warning(f"[StatusLog] Failed to write log entry: {exc}")
+
+
 def _resolve_detrack_job(order_sync: OrderSync) -> dict | None:
     """
     Try to fetch the Detrack job for an order sync record.
@@ -329,6 +357,11 @@ def update_delivery_status_from_detrack(db: Session, payload: dict) -> dict:
             order_sync.error_message = f"Shopify fulfilment failed: {exc}"
 
     db.commit()
+    _log_status_change(
+        db, order_sync.id, "delivery", previous_status, status,
+        f"Detrack webhook update. Reason: {reason}" if reason else "Detrack webhook update."
+    )
+    db.commit()
     db.refresh(order_sync)
 
     matched_by = "detrack_do_number" if do_number else "detrack_job_id"
@@ -479,6 +512,9 @@ def create_order_and_send_to_detrack(db: Session, order: StandardOrder) -> dict:
             )
 
         db.commit()
+        _log_status_change(db, order_sync.id, "sync", "pending", "sent_to_detrack", "Order sent to Detrack successfully.")
+        _log_status_change(db, order_sync.id, "delivery", None, "created", "Detrack job created.")
+        db.commit()
         db.refresh(order_sync)
 
         return {
@@ -499,6 +535,8 @@ def create_order_and_send_to_detrack(db: Session, order: StandardOrder) -> dict:
         order_sync.next_retry_at = datetime.utcnow() + timedelta(
             minutes=_next_retry_delay(0)
         )
+        db.commit()
+        _log_status_change(db, order_sync.id, "sync", "pending", "detrack_failed", f"Detrack creation failed: {exc}")
         db.commit()
 
         return {
@@ -674,6 +712,12 @@ def auto_retry_failed_detrack_jobs(db: Session) -> dict:
                 )
 
             db.commit()
+            _log_status_change(
+                db, order_sync.id, "sync", "detrack_failed", "sent_to_detrack",
+                f"Auto-retry succeeded on attempt {(order_sync.retry_count or 0) + 1}."
+            )
+            _log_status_change(db, order_sync.id, "delivery", None, "created", "Detrack job created via auto-retry.")
+            db.commit()
             succeeded += 1
 
             logger.info(
@@ -707,6 +751,12 @@ def auto_retry_failed_detrack_jobs(db: Session) -> dict:
                     f"[AutoRetry] Order {order_sync.id} permanently failed after "
                     f"{new_retry_count} attempts. Manual intervention required."
                 )
+                db.commit()
+                _log_status_change(
+                    db, order_sync.id, "sync", "detrack_failed", "detrack_failed_permanent",
+                    f"All {new_retry_count} retry attempts exhausted. Manual intervention required."
+                )
+                db.commit()
                 send_permanent_failure_alert(
                     order_sync_id=order_sync.id,
                     source=order_sync.source,
@@ -850,6 +900,15 @@ def handle_shopify_order_cancelled(db: Session, payload: dict) -> dict:
     )
     order_sync.updated_at = datetime.utcnow()
 
+    db.commit()
+    _log_status_change(
+        db, order_sync.id, "sync", previous_sync_status, "cancelled",
+        f"Order cancelled via Shopify webhook. Detrack action: {detrack_action}."
+    )
+    _log_status_change(
+        db, order_sync.id, "delivery", previous_delivery_status, "cancelled",
+        f"Detrack job {detrack_action} at cancellation. Status was: {detrack_status_at_cancellation}."
+    )
     db.commit()
     db.refresh(order_sync)
 

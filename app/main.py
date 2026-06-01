@@ -35,7 +35,7 @@ from app.shopify_admin_client import (
     get_shopify_fulfilment_plan,
     get_shopify_order_by_id,
 )
-from app.models import OrderSync
+from app.models import OrderSync, OrderSyncLog
 
 
 Base.metadata.create_all(bind=engine)
@@ -91,6 +91,41 @@ def recent_orders(
     return {
         "count": limit,
         "orders": list_recent_order_syncs(db, limit=limit),
+    }
+
+
+@app.get("/orders/{order_sync_id}/logs")
+def get_order_logs(
+    order_sync_id: int,
+    _: bool = Depends(require_admin_key),
+    db: Session = Depends(get_db),
+):
+    order = db.query(OrderSync).filter(OrderSync.id == order_sync_id).first()
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found.")
+
+    logs = (
+        db.query(OrderSyncLog)
+        .filter(OrderSyncLog.order_sync_id == order_sync_id)
+        .order_by(OrderSyncLog.created_at.asc())
+        .all()
+    )
+
+    return {
+        "order_sync_id": order_sync_id,
+        "source_order_id": order.source_order_id,
+        "customer_name": order.customer_name,
+        "logs": [
+            {
+                "id": log.id,
+                "log_type": log.log_type,
+                "from_status": log.from_status,
+                "to_status": log.to_status,
+                "note": log.note,
+                "created_at": log.created_at.isoformat() if log.created_at else None,
+            }
+            for log in logs
+        ],
     }
 
 

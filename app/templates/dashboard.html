@@ -409,6 +409,28 @@
 
   @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.3} }
   .blink { animation: blink 1.2s infinite; }
+
+  /* LOG ROWS */
+  .log-row td { background: var(--bg); padding: 0 !important; }
+  .log-inner { padding: 0 20px 16px 40px; }
+  .log-timeline { border-left: 1px solid var(--border2); padding-left: 16px; margin-top: 8px; }
+  .log-entry { position: relative; padding: 6px 0; }
+  .log-entry::before {
+    content: '';
+    position: absolute;
+    left: -20px; top: 10px;
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--border2);
+  }
+  .log-entry.sync::before { background: var(--blue); }
+  .log-entry.delivery::before { background: var(--green); }
+  .log-time { font-family: var(--font-mono); font-size: 10px; color: var(--text3); }
+  .log-change { font-family: var(--font-mono); font-size: 11px; color: var(--text); margin: 2px 0; }
+  .log-note { font-size: 11px; color: var(--text3); }
+  .log-arrow { color: var(--text3); margin: 0 4px; }
+  .expand-btn { cursor: pointer; font-family: var(--font-mono); font-size: 10px; color: var(--text3); background: none; border: none; padding: 0; }
+  .expand-btn:hover { color: var(--text); }
 </style>
 </head>
 <body>
@@ -675,6 +697,14 @@ function renderRecentTable(orders) {
       <td>${deliveryBadge(o.delivery_status)}</td>
       <td class="mono" style="font-size:11px;color:var(--text3)">${o.delivery_date || '—'}</td>
       <td class="mono" style="font-size:11px;color:var(--text3)">${o.created_at ? fmtDate(o.created_at) : '—'}</td>
+      <td><button class="expand-btn" onclick="toggleLogs(${o.id}, this)">▶ HISTORY</button></td>
+    </tr>
+    <tr class="log-row" id="log-row-${o.id}" style="display:none">
+      <td colspan="10">
+        <div class="log-inner" id="log-inner-${o.id}">
+          <div class="loading blink" style="font-size:11px">LOADING...</div>
+        </div>
+      </td>
     </tr>
   `).join('');
 
@@ -684,7 +714,7 @@ function renderRecentTable(orders) {
         <tr>
           <th>ID</th><th>Source</th><th>Order Ref</th><th>Customer</th>
           <th>DO Number</th><th>Sync Status</th><th>Delivery</th>
-          <th>Del. Date</th><th>Created</th>
+          <th>Del. Date</th><th>Created</th><th></th>
         </tr>
       </thead>
       <tbody>${rows}</tbody>
@@ -787,6 +817,48 @@ function fmtDate(iso) {
     hour: '2-digit', minute: '2-digit',
     hour12: false, timeZone: 'Asia/Singapore'
   });
+}
+
+async function toggleLogs(id, btn) {
+  const row = document.getElementById(`log-row-${id}`);
+  const isOpen = row.style.display !== 'none';
+
+  if (isOpen) {
+    row.style.display = 'none';
+    btn.textContent = '▶ HISTORY';
+    return;
+  }
+
+  row.style.display = 'table-row';
+  btn.textContent = '▼ HISTORY';
+
+  try {
+    const data = await apiFetch(`/orders/${id}/logs`);
+    renderLogs(id, data.logs || []);
+  } catch(e) {
+    document.getElementById(`log-inner-${id}`).innerHTML = `<div style="font-size:11px;color:var(--red)">Failed to load logs.</div>`;
+  }
+}
+
+function renderLogs(id, logs) {
+  if (!logs.length) {
+    document.getElementById(`log-inner-${id}`).innerHTML = `<div style="font-size:11px;color:var(--text3);padding:8px 0">No history yet.</div>`;
+    return;
+  }
+
+  const entries = logs.map(l => `
+    <div class="log-entry ${l.log_type}">
+      <div class="log-time">${fmtDate(l.created_at)} &nbsp;·&nbsp; ${l.log_type.toUpperCase()}</div>
+      <div class="log-change">
+        <span style="color:var(--text3)">${l.from_status || '—'}</span>
+        <span class="log-arrow">→</span>
+        <span style="color:${l.log_type === 'sync' ? 'var(--blue)' : 'var(--green)'}">${l.to_status || '—'}</span>
+      </div>
+      ${l.note ? `<div class="log-note">${l.note}</div>` : ''}
+    </div>
+  `).join('');
+
+  document.getElementById(`log-inner-${id}`).innerHTML = `<div class="log-timeline">${entries}</div>`;
 }
 
 function showToast(msg, type) {
