@@ -692,7 +692,6 @@ async function loadFailed() {
     const orders = data.orders || [];
     document.getElementById('failed-count').textContent = `${orders.length} orders`;
     renderFailedTable(orders);
-    updateStats(orders, 'failed');
   } catch(e) {
     console.error('Failed orders error:', e);
     document.getElementById('failed-table-wrap').innerHTML = `<div class="empty">Error loading failed orders: ${e.message}</div>`;
