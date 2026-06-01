@@ -653,30 +653,34 @@ async function loadAll() {
 // ── HEALTH / STATS ────────────────────────────────────
 async function loadHealth() {
   try {
-    const data = await fetch('/health').then(r => r.json());
+    const r = await fetch('/health');
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const data = await r.json();
 
-    // Update stat cards
+    const checks = data.checks || {};
+    const dbOk = checks.database?.ok ?? true;
+    const detrackOk = checks.detrack_api?.ok ?? true;
+    const systemOk = dbOk && detrackOk;
+
+    const dotDb = document.getElementById('dot-db');
+    const dotDetrack = document.getElementById('dot-detrack');
+    const dotOverall = document.getElementById('dot-overall');
+
+    dotDb.className = `health-dot ${dbOk ? 'ok' : 'error'}`;
+    dotDetrack.className = `health-dot ${detrackOk ? 'ok' : 'error'}`;
+    dotOverall.className = `health-dot ${systemOk ? 'ok' : 'error'}`;
+
+    document.getElementById('label-db').textContent = `Database: ${dbOk ? 'connected' : 'error — ' + (checks.database?.error || 'unknown')}`;
+    document.getElementById('label-detrack').textContent = `Detrack API: ${detrackOk ? 'reachable' : 'error — ' + (checks.detrack_api?.error || 'unknown')}`;
+    document.getElementById('label-overall').textContent = `System: ${systemOk ? 'ok' : 'degraded'}`;
+
     document.getElementById('stat-retry').textContent = data.detrack_failed_pending_retry ?? '0';
     document.getElementById('stat-perm').textContent = data.detrack_failed_permanent ?? '0';
 
-    // Update health bar
-    const checks = data.checks || {};
-    const dbOk = checks.database?.ok;
-    const detrackOk = checks.detrack_api?.ok;
-    const overall = data.status;
-    const systemOk = dbOk && detrackOk;
-
-dotDb.className = `health-dot ${dbOk ? 'ok' : 'error'}`;
-dotDetrack.className = `health-dot ${detrackOk ? 'ok' : 'error'}`;
-dotOverall.className = `health-dot ${systemOk ? 'ok' : 'error'}`;
-
-document.getElementById('label-db').textContent = `Database: ${dbOk ? 'connected' : 'error — ' + (checks.database?.error || 'unknown')}`;
-document.getElementById('label-detrack').textContent = `Detrack API: ${detrackOk ? 'reachable' : 'error — ' + (checks.detrack_api?.error || 'unknown')}`;
-document.getElementById('label-overall').textContent = `System: ${systemOk ? 'ok' : 'degraded'}`;
-
   } catch(e) {
-    document.getElementById('label-overall').textContent = 'System: unreachable';
+    console.error('Health check failed:', e);
     document.getElementById('dot-overall').className = 'health-dot error';
+    document.getElementById('label-overall').textContent = `System: error — ${e.message}`;
   }
 }
 
