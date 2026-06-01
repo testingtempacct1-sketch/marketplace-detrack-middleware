@@ -34,9 +34,6 @@ from app.shopify_admin_client import (
 )
 
 
-
-
-
 Base.metadata.create_all(bind=engine)
 ensure_order_sync_schema()
 
@@ -63,6 +60,7 @@ def recent_orders(
         "orders": list_recent_order_syncs(db, limit=limit),
     }
 
+
 @app.get("/admin/shopify/orders/{shopify_order_id}")
 def admin_get_shopify_order(
     shopify_order_id: str,
@@ -78,6 +76,7 @@ def admin_get_shopify_order(
         "order": order,
     }
 
+
 @app.get("/admin/shopify/orders/{shopify_order_id}/fulfilment-plan")
 def admin_get_shopify_fulfilment_plan(
     shopify_order_id: str,
@@ -90,7 +89,7 @@ def admin_get_shopify_fulfilment_plan(
 
     return plan
 
-    
+
 @app.post("/admin/shopify/orders/{shopify_order_id}/fulfilment-dry-run")
 def admin_shopify_fulfilment_dry_run(
     shopify_order_id: str,
@@ -111,6 +110,7 @@ def admin_shopify_fulfilment_dry_run(
 
     return result
 
+
 @app.post("/admin/shopify/orders/{shopify_order_id}/fulfil")
 def admin_shopify_fulfil_order(
     shopify_order_id: str,
@@ -130,6 +130,7 @@ def admin_shopify_fulfil_order(
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
     return result
+
 
 @app.post("/admin/shopee/orders/{shopee_order_sn}/cancel-detrack")
 def admin_cancel_shopee_detrack_job(
@@ -196,6 +197,7 @@ def test_tiktok_shop_connector(
     result = create_order_and_send_to_detrack(db, order)
     return result
 
+
 @app.post("/webhooks/detrack/job-status")
 def detrack_job_status_webhook(
     payload: dict = Body(...),
@@ -244,11 +246,36 @@ async def shopify_orders_create_webhook(
         "result": result,
     }
 
+
 @app.post("/webhooks/shopify/orders-cancelled")
 async def shopify_order_cancelled_webhook(
     request: Request,
+    x_shopify_hmac_sha256: str | None = Header(default=None),
+    x_shopify_topic: str | None = Header(default=None),
+    x_shopify_shop_domain: str | None = Header(default=None),
     db: Session = Depends(get_db),
 ):
-    payload = await request.json()
-    return handle_shopify_order_cancelled(db, payload)
+    raw_body = await request.body()
 
+    is_valid = verify_shopify_hmac(
+        raw_body=raw_body,
+        received_hmac=x_shopify_hmac_sha256,
+        secret=settings.shopify_webhook_secret,
+    )
+
+    if not is_valid:
+        raise HTTPException(status_code=401, detail="Invalid Shopify webhook signature")
+
+    try:
+        payload = json.loads(raw_body.decode("utf-8"))
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status_code=400, detail="Invalid JSON payload") from exc
+
+    result = handle_shopify_order_cancelled(db, payload)
+
+    return {
+        "received": True,
+        "topic": x_shopify_topic,
+        "shop": x_shopify_shop_domain,
+        "result": result,
+    }
