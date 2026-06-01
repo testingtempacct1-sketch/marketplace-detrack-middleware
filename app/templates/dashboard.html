@@ -1067,7 +1067,7 @@ function renderRecentTable(orders) {
       <td>${sourceBadge(o.source)}</td>
       <td class="mono">${o.source_order_id || '—'}</td>
       <td>${o.customer_name || '—'}</td>
-      <td class="mono">${o.detrack_do_number || '—'}</td>
+      <td>${detrackLink(o.detrack_do_number)}</td>
       <td>${statusBadge(o.sync_status)}</td>
       <td>${deliveryBadge(o.delivery_status)}</td>
       <td class="mono" style="font-size:11px;color:var(--text3)">${o.delivery_date || '—'}</td>
@@ -1156,7 +1156,14 @@ async function retryOrder(id, btn) {
 }
 
 // ── HELPERS ───────────────────────────────────────────
-function sourceBadge(source) {
+function detrackLink(doNumber) {
+  if (!doNumber) return '—';
+  const url = `https://app.detrack.com/jobs?search=${encodeURIComponent(doNumber)}`;
+  return `<a href="${url}" target="_blank" rel="noopener noreferrer"
+    style="color:var(--green);font-family:var(--font-mono);font-size:12px;
+    text-decoration:none;border-bottom:1px solid rgba(0,255,136,0.3)"
+    title="Open in Detrack">${doNumber} ↗</a>`;
+}
   const s = (source || '').toLowerCase();
   if (s.includes('tiktok')) return `<span class="badge badge-purple">TIKTOK</span>`;
   if (s.includes('shopee')) return `<span class="badge badge-amber">SHOPEE</span>`;
@@ -1210,15 +1217,30 @@ async function toggleLogs(id, btn) {
 
   try {
     const data = await apiFetch(`/orders/${id}/logs`);
-    renderLogs(id, data.logs || []);
+    renderLogs(id, data.logs || [], data.remarks || '');
   } catch(e) {
     document.getElementById(`log-inner-${id}`).innerHTML = `<div style="font-size:11px;color:var(--red)">Failed to load logs.</div>`;
   }
 }
 
-function renderLogs(id, logs) {
+function renderLogs(id, logs, remarks) {
+  let content = '';
+
+  // Show remarks at top if available
+  if (remarks) {
+    content += `
+      <div style="margin-bottom:10px;padding:8px 12px;
+        background:var(--bg3);border-left:2px solid var(--amber)">
+        <div style="font-family:var(--font-mono);font-size:9px;
+          color:var(--text3);text-transform:uppercase;letter-spacing:0.1em;
+          margin-bottom:4px">Remarks / Instructions</div>
+        <div style="font-size:12px;color:var(--text)">${remarks}</div>
+      </div>`;
+  }
+
   if (!logs.length) {
-    document.getElementById(`log-inner-${id}`).innerHTML = `<div style="font-size:11px;color:var(--text3);padding:8px 0">No history yet.</div>`;
+    content += `<div style="font-size:11px;color:var(--text3);padding:8px 0">No history yet.</div>`;
+    document.getElementById(`log-inner-${id}`).innerHTML = content;
     return;
   }
 
@@ -1234,7 +1256,8 @@ function renderLogs(id, logs) {
     </div>
   `).join('');
 
-  document.getElementById(`log-inner-${id}`).innerHTML = `<div class="log-timeline">${entries}</div>`;
+  content += `<div class="log-timeline">${entries}</div>`;
+  document.getElementById(`log-inner-${id}`).innerHTML = content;
 }
 
 function showToast(msg, type) {

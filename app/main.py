@@ -243,6 +243,7 @@ def get_order_logs(
         "order_sync_id": order_sync_id,
         "source_order_id": order.source_order_id,
         "customer_name": order.customer_name,
+        "remarks": order.remarks,
         "logs": [
             {
                 "id": log.id,
