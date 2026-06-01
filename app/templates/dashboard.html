@@ -458,6 +458,126 @@
   .log-arrow { color: var(--text3); margin: 0 4px; }
   .expand-btn { cursor: pointer; font-family: var(--font-mono); font-size: 10px; color: var(--text3); background: none; border: none; padding: 0; }
   .expand-btn:hover { color: var(--text); }
+
+  /* ── MOBILE RESPONSIVE ───────────────────────────── */
+  @media (max-width: 768px) {
+
+    /* Topbar */
+    .topbar {
+      padding: 0 14px;
+      height: 48px;
+    }
+    .topbar-divider { display: none; }
+    .topbar-title { display: none; }
+    .topbar-logo { font-size: 10px; }
+    .refresh-indicator { font-size: 10px; }
+    .logout-btn { padding: 4px 8px; font-size: 10px; }
+
+    /* Health row */
+    .health-row { padding: 10px 14px; gap: 8px; }
+    .health-item { font-size: 10px; }
+
+    /* Main padding */
+    .main { padding: 12px; }
+
+    /* Stat cards — 2 columns on mobile */
+    .stats-grid {
+      grid-template-columns: repeat(2, 1fr);
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+    .stat-card { padding: 14px; }
+    .stat-value { font-size: 24px; }
+    .stat-label { font-size: 9px; margin-bottom: 6px; }
+
+    /* Section headers */
+    .section-header { padding: 12px 14px; }
+    .section-title { font-size: 10px; }
+    .section-count { font-size: 10px; }
+
+    /* Tables — horizontal scroll */
+    .table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    table { font-size: 12px; min-width: 600px; }
+    th { padding: 8px 12px; font-size: 9px; }
+    td { padding: 9px 12px; }
+
+    /* Badges smaller on mobile */
+    .badge { font-size: 9px; padding: 2px 6px; }
+
+    /* Action buttons larger tap target */
+    .action-btn {
+      padding: 8px 12px;
+      font-size: 10px;
+      min-height: 36px;
+    }
+
+    /* Search & filter — stack vertically */
+    .section > div[style*="display:flex"] {
+      flex-direction: column !important;
+      gap: 8px !important;
+    }
+
+    #search-q {
+      width: 100% !important;
+      min-width: unset !important;
+      font-size: 14px !important;
+      padding: 10px 12px !important;
+    }
+
+    #search-date,
+    #search-source,
+    #search-status {
+      width: 100% !important;
+      font-size: 14px !important;
+      padding: 10px 12px !important;
+    }
+
+    /* Login box */
+    .login-box {
+      width: 90%;
+      padding: 28px 24px;
+      margin: 0 auto;
+    }
+
+    .login-title { font-size: 18px; }
+
+    .login-box input {
+      font-size: 16px !important; /* Prevents iOS zoom on focus */
+      padding: 14px !important;
+    }
+
+    .login-box button {
+      padding: 15px;
+      font-size: 13px;
+    }
+
+    /* Log timeline */
+    .log-inner { padding: 0 14px 12px 28px; }
+
+    /* Detrack status grid */
+    .status-grid {
+      grid-template-columns: repeat(2, 1fr);
+    }
+
+    /* Toast */
+    #toast {
+      bottom: 16px;
+      right: 16px;
+      left: 16px;
+      max-width: unset;
+      font-size: 11px;
+    }
+
+    /* Retry button full width on mobile */
+    td .action-btn { width: 100%; text-align: center; }
+  }
+
+  /* Extra small phones */
+  @media (max-width: 380px) {
+    .stats-grid { grid-template-columns: repeat(2, 1fr); }
+    .stat-value { font-size: 20px; }
+    .topbar-logo { font-size: 9px; }
+  }
 </style>
 </head>
 <body>
