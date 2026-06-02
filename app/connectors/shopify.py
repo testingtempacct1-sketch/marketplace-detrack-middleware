@@ -75,15 +75,15 @@ def shopify_order_to_standard(payload: dict) -> StandardOrder:
     note = payload.get("note") or ""
     order_name = payload.get("name") or order_id
 
-  return StandardOrder(
-    source="shopify",
-    source_order_id=order_id,
-    source_order_name=order_name,  # ← add this line
-    customer_name=customer_name,
-    phone=phone,
-    address=address,
-    postal_code=postal_code,
-    items=items,
-    remarks=f"Shopify order {order_name}. {note}".strip(),
-    delivery_date=None,
-)
+    return StandardOrder(
+        source="shopify",
+        source_order_id=order_id,
+        source_order_name=order_name,
+        customer_name=customer_name,
+        phone=phone,
+        address=address,
+        postal_code=postal_code,
+        items=items,
+        remarks=f"Shopify order {order_name}. {note}".strip(),
+        delivery_date=None,
+    )
