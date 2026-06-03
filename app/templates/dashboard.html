@@ -1169,7 +1169,7 @@ function renderRecentTable(orders) {
       <td>${printBadge(o.label_printed)}</td>
       <td style="white-space:nowrap">
         <button class="expand-btn" onclick="toggleLogs(${o.id}, this)">▶ HISTORY</button>
-        <a href="/orders/${o.id}/label?x-admin-key=${apiKey}" target="_blank"
+        <a href="/orders/${o.id}/label?key=${apiKey}" target="_blank"
           style="font-family:var(--font-mono);font-size:10px;color:var(--text3);
           text-decoration:none;margin-left:8px" title="Preview label PDF">🖨</a>
         <button class="action-btn" style="margin-left:4px;padding:3px 6px;font-size:9px"
@@ -1439,7 +1439,7 @@ async function reprintLabel(id, btn) {
   }
 }
 
-
+async function toggleLogs(id, btn) {
   const row = document.getElementById(`log-row-${id}`);
   const isOpen = row.style.display !== 'none';
 
