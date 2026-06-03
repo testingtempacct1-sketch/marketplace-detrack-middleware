@@ -16,11 +16,37 @@ from barcode.writer import ImageWriter
 from reportlab.lib import colors
 from reportlab.lib.units import mm
 from reportlab.lib.utils import ImageReader
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.pdfgen import canvas
 
 logger = logging.getLogger(__name__)
 
 SGT = ZoneInfo("Asia/Singapore")
+
+# Register CJK font for Chinese character support
+_CJK_FONT_REGISTERED = False
+CJK_FONT = "NotoSansCJK"
+CJK_FONT_PATH = "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc"
+
+
+def _ensure_cjk_font():
+    global _CJK_FONT_REGISTERED
+    if _CJK_FONT_REGISTERED:
+        return
+    try:
+        pdfmetrics.registerFont(TTFont(CJK_FONT, CJK_FONT_PATH))
+        _CJK_FONT_REGISTERED = True
+        logger.info("[LabelGenerator] CJK font registered successfully.")
+    except Exception as e:
+        logger.warning(f"[LabelGenerator] Could not register CJK font: {e}")
+
+
+def _cjk_font(size: int, bold: bool = False) -> tuple[str, int]:
+    """Return font name and size, using CJK font if available."""
+    if _CJK_FONT_REGISTERED:
+        return CJK_FONT, size
+    return ("Helvetica-Bold" if bold else "Helvetica"), size
 
 # Label dimensions for DK-22246 (103mm wide continuous roll)
 LABEL_WIDTH_MM = 103
@@ -139,7 +165,8 @@ def generate_label_pdf(
     """
     buffer = io.BytesIO()
 
-    # Calculate label height dynamically
+    # Ensure CJK font is registered
+    _ensure_cjk_font()
     # Start with fixed sections and add dynamic content
     address_lines = _wrap_text(address or "", 38)
     item_lines = []
@@ -303,7 +330,8 @@ def generate_label_pdf(
     c.drawString(PADDING, y, "ITEMS")
     y -= 5 * mm
 
-    c.setFont("Helvetica", 8)
+    font_name, font_size = _cjk_font(8)
+    c.setFont(font_name, font_size)
     for item_line in item_lines:
         c.setFillColor(colors.HexColor("#444441"))
         c.drawString(PADDING, y, f"• {item_line}")
@@ -320,7 +348,8 @@ def generate_label_pdf(
         c.drawString(PADDING, y, "REMARKS")
         y -= 5 * mm
 
-        c.setFont("Helvetica", 7)
+        font_name, font_size = _cjk_font(7)
+        c.setFont(font_name, font_size)
         for rline in remarks_lines:
             c.setFillColor(colors.HexColor("#444441"))
             c.drawString(PADDING, y, rline)
