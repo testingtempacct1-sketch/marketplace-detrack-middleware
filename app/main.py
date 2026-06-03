@@ -57,20 +57,54 @@ def on_shutdown():
 
 @app.get("/health")
 def health_check(db: Session = Depends(get_db)):
-    failed_count = (
-        db.query(OrderSync)
-        .filter(OrderSync.sync_status == "detrack_failed")
-        .count()
-    )
-    permanent_count = (
-        db.query(OrderSync)
-        .filter(OrderSync.sync_status == "detrack_failed_permanent")
-        .count()
-    )
+    db_ok = False
+    db_error = None
+    try:
+        from sqlalchemy import text
+        db.execute(text("SELECT 1"))
+        db_ok = True
+    except Exception as exc:
+        db_error = str(exc)
+
+    detrack_ok = False
+    detrack_error = None
+    try:
+        import requests as req
+        response = req.get(
+            settings.detrack_base_url,
+            headers={"X-API-Key": settings.detrack_api_key},
+            params={"limit": 1},
+            timeout=5,
+        )
+        detrack_ok = response.status_code < 500
+    except Exception as exc:
+        detrack_error = str(exc)
+
+    failed_count = 0
+    permanent_count = 0
+    try:
+        failed_count = (
+            db.query(OrderSync)
+            .filter(OrderSync.sync_status == "detrack_failed")
+            .count()
+        )
+        permanent_count = (
+            db.query(OrderSync)
+            .filter(OrderSync.sync_status == "detrack_failed_permanent")
+            .count()
+        )
+    except Exception:
+        pass
+
+    overall = "ok" if db_ok and detrack_ok else "degraded"
 
     return {
-        "status": "ok",
+        "status": overall,
         "service": settings.app_name,
+        "checks": {
+            "database": {"ok": db_ok, "error": db_error},
+            "detrack_api": {"ok": detrack_ok, "error": detrack_error},
+        },
         "detrack_failed_pending_retry": failed_count,
         "detrack_failed_permanent": permanent_count,
     }
