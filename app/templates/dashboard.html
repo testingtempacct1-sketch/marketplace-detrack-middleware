@@ -1147,6 +1147,9 @@ async function loadRecent() {
 }
 
 function renderRecentTable(orders) {
+  // Cache orders for edit modal
+  orders.forEach(o => { _recentOrdersCache[o.id] = o; });
+
   if (!orders.length) {
     document.getElementById('recent-table-wrap').innerHTML = `<div class="empty">No orders yet.</div>`;
     return;
@@ -1170,7 +1173,7 @@ function renderRecentTable(orders) {
           style="font-family:var(--font-mono);font-size:10px;color:var(--text3);
           text-decoration:none;margin-left:8px" title="Preview label PDF">🖨</a>
         <button class="action-btn" style="margin-left:4px;padding:3px 6px;font-size:9px"
-          onclick="openEditModal(${o.id}, ${JSON.stringify(o).replace(/"/g, '&quot;')})">EDIT</button>
+          onclick="openEditModalById(${o.id})">EDIT</button>
         <button class="action-btn retry" style="margin-left:2px;padding:3px 6px;font-size:9px"
           onclick="reprintLabel(${o.id}, this)">REPRINT</button>
       </td>
@@ -1316,6 +1319,29 @@ function fmtDate(iso) {
 
 // ── EDIT ORDER ────────────────────────────────────────
 let _editOrderId = null;
+let _recentOrdersCache = {};
+
+async function openEditModalById(id) {
+  try {
+    // Try cache first
+    if (_recentOrdersCache[id]) {
+      openEditModal(id, _recentOrdersCache[id]);
+      return;
+    }
+    // Fetch from API
+    const data = await apiFetch(`/orders/recent?limit=100`);
+    const orders = data.orders || [];
+    orders.forEach(o => { _recentOrdersCache[o.id] = o; });
+    const order = _recentOrdersCache[id];
+    if (order) {
+      openEditModal(id, order);
+    } else {
+      showToast('Order not found in recent list', 'error');
+    }
+  } catch(e) {
+    showToast(`Failed to load order: ${e.message}`, 'error');
+  }
+}
 
 function openEditModal(id, order) {
   _editOrderId = id;
