@@ -15,6 +15,7 @@ from barcode import Code128
 from barcode.writer import ImageWriter
 from reportlab.lib import colors
 from reportlab.lib.units import mm
+from reportlab.lib.utils import ImageReader
 from reportlab.pdfgen import canvas
 
 logger = logging.getLogger(__name__)
@@ -227,7 +228,7 @@ def generate_label_pdf(
         barcode_w = LABEL_WIDTH - PADDING * 2
         barcode_h_draw = 14 * mm
         c.drawImage(
-            barcode_buf,
+            ImageReader(barcode_buf),
             PADDING, y - 5 * mm - barcode_h_draw,
             width=barcode_w,
             height=barcode_h_draw,
@@ -255,7 +256,7 @@ def generate_label_pdf(
     try:
         qr_buf = _generate_qr_image(do_number)
         c.drawImage(
-            qr_buf,
+            ImageReader(qr_buf),
             PADDING, y - qr_size,
             width=qr_size,
             height=qr_size,
