@@ -26,8 +26,8 @@ SGT = ZoneInfo("Asia/Singapore")
 
 # Register CJK font for Chinese character support
 _CJK_FONT_REGISTERED = False
-CJK_FONT = "NotoSansCJK"
-CJK_FONT_PATH = "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc"
+CJK_FONT = "WQYMicroHei"
+CJK_FONT_PATH = "/usr/share/fonts/truetype/wqy-microhei.ttf"
 
 
 def _ensure_cjk_font():
