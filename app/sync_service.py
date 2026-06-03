@@ -460,16 +460,10 @@ def create_order_and_send_to_detrack(db: Session, order: StandardOrder) -> dict:
     )
 
     if existing:
-        logger.info(
-            f"[Dedup] Duplicate webhook detected — "
-            f"source={order.source}, source_order_id={order.source_order_id}, "
-            f"existing_id={existing.id}, sync_status={existing.sync_status}"
-        )
         return {
             "created": False,
             "sent_to_detrack": False,
             "message": "Order already exists. Skipping duplicate.",
-            "duplicate": True,
             "order_sync_id": existing.id,
             "sync_status": existing.sync_status,
             "detrack_do_number": existing.detrack_do_number,
@@ -525,6 +519,14 @@ def create_order_and_send_to_detrack(db: Session, order: StandardOrder) -> dict:
         _log_status_change(db, order_sync.id, "delivery", None, "created", "Detrack job created.")
         db.commit()
         db.refresh(order_sync)
+
+        # Print shipping label
+        try:
+            from app.printnode_client import print_shipping_label
+            print_result = print_shipping_label(order_sync)
+            logger.info(f"[Print] Order {order_sync.id} print result: {print_result}")
+        except Exception as exc:
+            logger.warning(f"[Print] Label printing failed for order {order_sync.id}: {exc}")
 
         return {
             "created": True,

@@ -24,6 +24,10 @@ class Settings(BaseSettings):
     telegram_bot_token: str = ""
     telegram_chat_id: str = ""
 
+    # PrintNode
+    printnode_api_key: str = ""
+    printnode_printer_id: str = ""
+
     class Config:
         env_file = ".env"
 
