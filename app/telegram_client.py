@@ -96,6 +96,29 @@ def send_retry_success_alert(
     return send_telegram_message(message)
 
 
+def send_print_failure_alert(
+    order_sync_id: int,
+    source: str,
+    source_order_id: str,
+    detrack_do_number: str | None,
+    error: str,
+) -> bool:
+    """Send a Telegram alert when a label fails to print."""
+    source_label = (source or "unknown").upper()
+
+    message = (
+        f"🖨️ <b>Label Print Failed</b>\n\n"
+        f"<b>Order ID:</b> #{order_sync_id}\n"
+        f"<b>Source:</b> {source_label}\n"
+        f"<b>Order Ref:</b> {source_order_id}\n"
+        f"<b>DO Number:</b> {detrack_do_number or 'N/A'}\n"
+        f"<b>Error:</b> {error}\n\n"
+        f"⚠️ Please print the label manually."
+    )
+
+    return send_telegram_message(message)
+
+
 def send_daily_summary(
     date_sgt: str,
     total_orders: int,

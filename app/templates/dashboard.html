@@ -1072,7 +1072,14 @@ function renderRecentTable(orders) {
       <td>${deliveryBadge(o.delivery_status)}</td>
       <td class="mono" style="font-size:11px;color:var(--text3)">${o.delivery_date || '—'}</td>
       <td class="mono" style="font-size:11px;color:var(--text3)">${o.created_at ? fmtDate(o.created_at) : '—'}</td>
-      <td><button class="expand-btn" onclick="toggleLogs(${o.id}, this)">▶ HISTORY</button></td>
+      <td>${printBadge(o.label_printed)}</td>
+      <td>
+        <button class="expand-btn" onclick="toggleLogs(${o.id}, this)">▶ HISTORY</button>
+        <a href="/orders/${o.id}/label?x-admin-key=${apiKey}" target="_blank"
+          style="font-family:var(--font-mono);font-size:10px;color:var(--text3);
+          text-decoration:none;margin-left:8px"
+          title="Preview label PDF">🖨</a>
+      </td>
     </tr>
     <tr class="log-row" id="log-row-${o.id}" style="display:none">
       <td colspan="10">
@@ -1089,7 +1096,7 @@ function renderRecentTable(orders) {
         <tr>
           <th>ID</th><th>Source</th><th>Order Ref</th><th>Customer</th>
           <th>DO Number</th><th>Sync Status</th><th>Delivery</th>
-          <th>Del. Date</th><th>Created</th><th></th>
+          <th>Del. Date</th><th>Created</th><th>Print</th><th></th>
         </tr>
       </thead>
       <tbody>${rows}</tbody>
@@ -1164,6 +1171,14 @@ function detrackLink(doNumber, deliveryDate) {
     style="color:var(--green);font-family:var(--font-mono);font-size:12px;
     text-decoration:none;border-bottom:1px solid rgba(0,255,136,0.3)"
     title="View in Detrack (${date})">${doNumber} ↗</a>`;
+}
+
+function printBadge(status) {
+  if (!status) return `<span class="badge badge-gray">—</span>`;
+  if (status === 'printed') return `<span class="badge badge-green">🖨 PRINTED</span>`;
+  if (status === 'failed') return `<span class="badge badge-red">🖨 FAILED</span>`;
+  if (status === 'skipped') return `<span class="badge badge-gray">SKIPPED</span>`;
+  return `<span class="badge badge-gray">${status}</span>`;
 }
 
 function sourceBadge(source) {

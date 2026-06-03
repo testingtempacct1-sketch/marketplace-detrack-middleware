@@ -153,6 +153,8 @@ def _order_sync_to_dict(order_sync: OrderSync) -> dict:
         "retry_count": order_sync.retry_count,
         "last_retry_at": order_sync.last_retry_at.isoformat() if order_sync.last_retry_at else None,
         "next_retry_at": order_sync.next_retry_at.isoformat() if order_sync.next_retry_at else None,
+        "label_printed": order_sync.label_printed,
+        "label_print_error": order_sync.label_print_error,
         "created_at": order_sync.created_at.isoformat() if order_sync.created_at else None,
         "updated_at": order_sync.updated_at.isoformat() if order_sync.updated_at else None,
     }
@@ -523,9 +525,38 @@ def create_order_and_send_to_detrack(db: Session, order: StandardOrder) -> dict:
         # Print shipping label
         try:
             from app.printnode_client import print_shipping_label
+            from app.telegram_client import send_print_failure_alert
             print_result = print_shipping_label(order_sync)
+
+            if print_result.get("printed"):
+                order_sync.label_printed = "printed"
+                order_sync.label_print_error = None
+                _log_status_change(
+                    db, order_sync.id, "sync", None, "label_printed",
+                    f"Label printed successfully. Job ID: {print_result.get('job_id')}"
+                )
+            else:
+                order_sync.label_printed = "failed"
+                order_sync.label_print_error = print_result.get("reason", "Unknown error")
+                _log_status_change(
+                    db, order_sync.id, "sync", None, "label_failed",
+                    f"Label print failed: {print_result.get('reason')}"
+                )
+                send_print_failure_alert(
+                    order_sync_id=order_sync.id,
+                    source=order_sync.source,
+                    source_order_id=order_sync.source_order_id,
+                    detrack_do_number=order_sync.detrack_do_number,
+                    error=print_result.get("reason", "Unknown error"),
+                )
+
+            db.commit()
             logger.info(f"[Print] Order {order_sync.id} print result: {print_result}")
+
         except Exception as exc:
+            order_sync.label_printed = "failed"
+            order_sync.label_print_error = str(exc)
+            db.commit()
             logger.warning(f"[Print] Label printing failed for order {order_sync.id}: {exc}")
 
         return {

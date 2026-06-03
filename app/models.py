@@ -37,6 +37,10 @@ class OrderSync(Base):
     last_retry_at = Column(DateTime, nullable=True)
     next_retry_at = Column(DateTime, nullable=True)
 
+    # Print tracking
+    label_printed = Column(String(20), nullable=True)  # "printed", "failed", "skipped"
+    label_print_error = Column(Text, nullable=True)
+
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow)
 
