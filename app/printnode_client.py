@@ -81,7 +81,6 @@ def print_label(pdf_bytes: bytes, title: str = "Shipping Label") -> dict:
             "options": {
                 "paper": "w103h193",
                 "fit_to_page": False,
-                "rotate": "0",
             }
         }
 
