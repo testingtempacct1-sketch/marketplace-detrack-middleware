@@ -210,3 +210,44 @@ def stop_scheduler() -> None:
     if _scheduler and _scheduler.running:
         _scheduler.shutdown(wait=False)
         logger.info("[Scheduler] Stopped.")
+
+def start_scheduler() -> None:
+    global _scheduler
+
+    if _scheduler and _scheduler.running:
+        return
+
+    _scheduler = BackgroundScheduler(timezone="Asia/Singapore")
+
+    _scheduler.add_job(
+        _run_retry_job,
+        trigger="interval",
+        minutes=5,
+        id="retry_failed_detrack_jobs",
+        name="Retry failed Detrack jobs",
+        replace_existing=True,
+        next_run_time=datetime.now(),
+    )
+
+    _scheduler.add_job(
+        _run_print_retry_job,
+        trigger="interval",
+        minutes=5,
+        id="retry_failed_prints",
+        name="Retry failed label prints",
+        replace_existing=True,
+    )
+
+    _scheduler.add_job(
+        _run_daily_summary,
+        trigger="cron",
+        hour=9,
+        minute=0,
+        timezone="Asia/Singapore",
+        id="daily_summary",
+        name="Daily Telegram summary",
+        replace_existing=True,
+    )
+
+    _scheduler.start()
+    logger.info("[Scheduler] Started — retry every 5min, print retry every 5min, daily summary 9AM SGT.")
