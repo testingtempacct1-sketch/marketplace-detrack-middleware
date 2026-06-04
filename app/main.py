@@ -642,6 +642,67 @@ def admin_cancel_shopee_detrack_job(
     return cancel_shopee_detrack_job(shopee_order_sn)
 
 
+@app.post("/admin/sync-detrack-statuses")
+def sync_detrack_statuses(
+    _: bool = Depends(require_admin_key),
+    db: Session = Depends(get_db),
+):
+    """Bulk sync delivery statuses from Detrack for all active orders."""
+    import requests as req
+    from datetime import datetime
+
+    # Get all active orders
+    active_orders = (
+        db.query(OrderSync)
+        .filter(OrderSync.sync_status == "sent_to_detrack")
+        .filter(OrderSync.detrack_job_id.isnot(None))
+        .all()
+    )
+
+    if not active_orders:
+        return {"synced": 0, "message": "No active orders to sync."}
+
+    updated = 0
+    errors = 0
+
+    for order in active_orders:
+        try:
+            response = req.get(
+                f"{settings.detrack_base_url}/{order.detrack_job_id}",
+                headers={
+                    "Content-Type": "application/json",
+                    "X-API-Key": settings.detrack_api_key,
+                },
+                timeout=10,
+            )
+
+            if response.status_code == 200:
+                data = response.json().get("data", {})
+                new_status = data.get("status") or data.get("tracking_status_code")
+
+                if new_status and new_status != order.delivery_status:
+                    old_status = order.delivery_status
+                    order.delivery_status = new_status
+                    order.updated_at = datetime.utcnow()
+                    updated += 1
+                    logging.info(
+                        f"[SyncDetrack] Order #{order.id} {order.detrack_do_number}: "
+                        f"{old_status} → {new_status}"
+                    )
+        except Exception as exc:
+            errors += 1
+            logging.error(f"[SyncDetrack] Error syncing order #{order.id}: {exc}")
+
+    db.commit()
+
+    return {
+        "synced": updated,
+        "total": len(active_orders),
+        "errors": errors,
+        "message": f"Updated {updated}/{len(active_orders)} orders.",
+    }
+
+
 @app.post("/orders/test-standard")
 def test_standard_order(
     order: StandardOrder,
