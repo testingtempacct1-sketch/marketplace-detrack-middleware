@@ -708,10 +708,6 @@
       <span id="label-detrack">Detrack API: checking...</span>
     </div>
     <div class="health-item">
-      <div class="health-dot checking" id="dot-ssl"></div>
-      <span id="label-ssl">SSL: checking...</span>
-    </div>
-    <div class="health-item">
       <div class="health-dot" id="dot-overall"></div>
       <span id="label-overall">System: checking...</span>
     </div>
@@ -1062,18 +1058,18 @@ async function loadHealth() {
     const checks = data.checks || {};
     const dbOk = checks.database?.ok ?? true;
     const detrackOk = checks.detrack_api?.ok ?? true;
-    const sslOk = checks.ssl_certificate?.ok ?? true;
-    const sslDays = checks.ssl_certificate?.days_remaining;
-    const systemOk = dbOk && detrackOk && sslOk;
+    const systemOk = dbOk && detrackOk;
 
-    document.getElementById('dot-db').className = `health-dot ${dbOk ? 'ok' : 'error'}`;
-    document.getElementById('dot-detrack').className = `health-dot ${detrackOk ? 'ok' : 'error'}`;
-    document.getElementById('dot-ssl').className = `health-dot ${sslOk ? 'ok' : 'error'}`;
-    document.getElementById('dot-overall').className = `health-dot ${systemOk ? 'ok' : 'error'}`;
+    const dotDb = document.getElementById('dot-db');
+    const dotDetrack = document.getElementById('dot-detrack');
+    const dotOverall = document.getElementById('dot-overall');
+
+    dotDb.className = `health-dot ${dbOk ? 'ok' : 'error'}`;
+    dotDetrack.className = `health-dot ${detrackOk ? 'ok' : 'error'}`;
+    dotOverall.className = `health-dot ${systemOk ? 'ok' : 'error'}`;
 
     document.getElementById('label-db').textContent = `Database: ${dbOk ? 'connected' : 'error — ' + (checks.database?.error || 'unknown')}`;
     document.getElementById('label-detrack').textContent = `Detrack API: ${detrackOk ? 'reachable' : 'error — ' + (checks.detrack_api?.error || 'unknown')}`;
-    document.getElementById('label-ssl').textContent = `SSL: ${sslOk ? `valid (${sslDays} days)` : sslDays ? `expiring soon (${sslDays} days)` : 'error'}`;
     document.getElementById('label-overall').textContent = `System: ${systemOk ? 'ok' : 'degraded'}`;
 
     document.getElementById('stat-retry').textContent = data.detrack_failed_pending_retry ?? '0';
@@ -1172,14 +1168,14 @@ function renderRecentTable(orders) {
       <td class="mono" style="font-size:11px;color:var(--text3)">${o.created_at ? fmtDate(o.created_at) : '—'}</td>
       <td>${printBadge(o.label_printed)}</td>
       <td style="white-space:nowrap">
-        <button class="expand-btn" onclick="toggleLogs(${o.id}, this)">▶ HISTORY</button>
+        <button class="expand-btn" onclick="toggleLogs(${o.id}, this)" title="View history">▶</button>
         <a href="/orders/${o.id}/label?key=${apiKey}" target="_blank"
           style="font-family:var(--font-mono);font-size:10px;color:var(--text3);
-          text-decoration:none;margin-left:8px" title="Preview label PDF">🖨</a>
-        <button class="action-btn" style="margin-left:4px;padding:3px 6px;font-size:9px"
-          onclick="openEditModalById(${o.id})">EDIT</button>
-        <button class="action-btn retry" style="margin-left:2px;padding:3px 6px;font-size:9px"
-          onclick="reprintLabel(${o.id}, this)">REPRINT</button>
+          text-decoration:none;margin-left:4px" title="Preview label">🖨</a>
+        <button class="action-btn" style="margin-left:4px;padding:3px 5px;font-size:9px"
+          onclick="openEditModalById(${o.id})" title="Edit order">✏</button>
+        <button class="action-btn retry" style="margin-left:2px;padding:3px 5px;font-size:9px"
+          onclick="reprintLabel(${o.id}, this)" title="Reprint label">↺</button>
       </td>
     </tr>
     <tr class="log-row" id="log-row-${o.id}" style="display:none">
@@ -1197,7 +1193,7 @@ function renderRecentTable(orders) {
         <tr>
           <th>ID</th><th>Source</th><th>Order Ref</th><th>Customer</th>
           <th>DO Number</th><th>Sync Status</th><th>Delivery</th>
-          <th>Del. Date</th><th>Created</th><th>Print</th><th></th>
+          <th>Del. Date</th><th>Created</th><th>Print</th><th>Actions</th>
         </tr>
       </thead>
       <tbody>${rows}</tbody>
@@ -1449,12 +1445,12 @@ async function toggleLogs(id, btn) {
 
   if (isOpen) {
     row.style.display = 'none';
-    btn.textContent = '▶ HISTORY';
+    btn.textContent = '▶';
     return;
   }
 
   row.style.display = 'table-row';
-  btn.textContent = '▼ HISTORY';
+  btn.textContent = '▼';
 
   try {
     const data = await apiFetch(`/orders/${id}/logs`);
