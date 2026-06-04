@@ -162,7 +162,7 @@ def _run_print_retry_job() -> None:
         db.close()
 
 
-
+def start_scheduler() -> None:
     global _scheduler
 
     if _scheduler and _scheduler.running:
@@ -201,7 +201,7 @@ def _run_print_retry_job() -> None:
     )
 
     _scheduler.start()
-    logger.info("[Scheduler] Started — retry job every 5min, print retry every 5min, daily summary at 9:00 AM SGT.")
+    logger.info("[Scheduler] Started — retry every 5min, print retry every 5min, daily summary 9AM SGT.")
 
 
 def stop_scheduler() -> None:
