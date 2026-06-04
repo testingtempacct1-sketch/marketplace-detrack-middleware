@@ -47,7 +47,11 @@ def get_printer_info() -> dict | None:
                 f"PrintNode error {response.status_code}: {response.text[:200]}"
             )
 
-        return response.json()
+        data = response.json()
+        # API returns a list, get first item
+        if isinstance(data, list):
+            return data[0] if data else None
+        return data
 
     except PrintNodeError:
         raise
