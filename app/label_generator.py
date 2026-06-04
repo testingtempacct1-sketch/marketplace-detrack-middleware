@@ -49,7 +49,8 @@ def _cjk_font(size: int, bold: bool = False) -> tuple[str, int]:
     return ("Helvetica-Bold" if bold else "Helvetica"), size
 
 # Label dimensions for DK-22246 (103mm wide continuous roll)
-LABEL_WIDTH_MM = 103
+# Printing at 100mm x 150mm for better fit
+LABEL_WIDTH_MM = 100
 LABEL_WIDTH = LABEL_WIDTH_MM * mm
 
 # Colors
@@ -177,25 +178,8 @@ def generate_label_pdf(
 
     remarks_lines = _wrap_text(remarks or "", 50) if remarks else []
 
-    # Calculate height
-    header_h = 20 * mm
-    do_section_h = 16 * mm
-    barcode_h = 26 * mm
-    qr_customer_h = max(26 * mm, (3 + len(address_lines)) * 5 * mm)
-    divider_h = 2 * mm
-    items_h = (2 + len(item_lines)) * 5 * mm
-    remarks_h = (2 + len(remarks_lines)) * 5 * mm if remarks_lines else 0
-    footer_h = 10 * mm
-    padding_total = 8 * mm
-
-    label_height = (
-        header_h + do_section_h + barcode_h +
-        qr_customer_h + divider_h + items_h +
-        remarks_h + footer_h + padding_total
-    )
-
-    # Ensure minimum height
-    label_height = max(label_height, 120 * mm)
+    # Fixed label height of 150mm
+    label_height = 150 * mm
 
     c = canvas.Canvas(buffer, pagesize=(LABEL_WIDTH, label_height))
     y = label_height  # Start from top
