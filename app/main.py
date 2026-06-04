@@ -57,6 +57,7 @@ def on_shutdown():
 
 @app.get("/health")
 def health_check(db: Session = Depends(get_db)):
+    # DB connectivity check
     db_ok = False
     db_error = None
     try:
@@ -66,6 +67,7 @@ def health_check(db: Session = Depends(get_db)):
     except Exception as exc:
         db_error = str(exc)
 
+    # Detrack API reachability check
     detrack_ok = False
     detrack_error = None
     try:
@@ -80,6 +82,7 @@ def health_check(db: Session = Depends(get_db)):
     except Exception as exc:
         detrack_error = str(exc)
 
+    # Failed order counts
     failed_count = 0
     permanent_count = 0
     try:
@@ -96,7 +99,27 @@ def health_check(db: Session = Depends(get_db)):
     except Exception:
         pass
 
-    overall = "ok" if db_ok and detrack_ok else "degraded"
+    # SSL certificate expiry check
+    ssl_ok = False
+    ssl_days_remaining = None
+    ssl_error = None
+    try:
+        import subprocess
+        import re
+        result = subprocess.run(
+            ["certbot", "certificates"],
+            capture_output=True, text=True, timeout=10
+        )
+        match = re.search(r"VALID: (\d+) days", result.stdout)
+        if match:
+            ssl_days_remaining = int(match.group(1))
+            ssl_ok = ssl_days_remaining > 14
+        else:
+            ssl_error = "Could not parse certificate expiry"
+    except Exception as exc:
+        ssl_error = str(exc)
+
+    overall = "ok" if db_ok and detrack_ok and ssl_ok else "degraded"
 
     return {
         "status": overall,
@@ -104,6 +127,11 @@ def health_check(db: Session = Depends(get_db)):
         "checks": {
             "database": {"ok": db_ok, "error": db_error},
             "detrack_api": {"ok": detrack_ok, "error": detrack_error},
+            "ssl_certificate": {
+                "ok": ssl_ok,
+                "days_remaining": ssl_days_remaining,
+                "error": ssl_error,
+            },
         },
         "detrack_failed_pending_retry": failed_count,
         "detrack_failed_permanent": permanent_count,
