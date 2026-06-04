@@ -1,12 +1,6 @@
 import json
 from pathlib import Path
 
-import logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(levelname)s %(message)s",
-)
-
 from fastapi import Body, Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, Response
 from sqlalchemy.orm import Session
@@ -706,12 +700,22 @@ def test_tiktok_shop_connector(
     return result
 
 
-@app.post("/webhooks/detrack/job-status")
-def detrack_job_status_webhook(
-    payload: dict = Body(...),
+@app.api_route("/webhooks/detrack/job-status", methods=["GET", "POST"])
+async def detrack_job_status_webhook(
+    request: Request,
     _: bool = Depends(require_detrack_webhook_key),
     db: Session = Depends(get_db),
 ):
+    # GET requests are verification pings — just return OK
+    if request.method == "GET":
+        return {"status": "ok", "message": "Detrack webhook endpoint ready."}
+
+    # POST requests contain the actual job status update
+    try:
+        payload = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid JSON payload")
+
     result = update_delivery_status_from_detrack(db, payload)
 
     return {
