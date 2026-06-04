@@ -178,8 +178,25 @@ def generate_label_pdf(
 
     remarks_lines = _wrap_text(remarks or "", 50) if remarks else []
 
-    # Fixed label height of 150mm
-    label_height = 150 * mm
+    # Calculate height dynamically with minimum 150mm
+    header_h = 20 * mm
+    do_section_h = 16 * mm
+    barcode_h = 28 * mm
+    qr_customer_h = max(30 * mm, (3 + len(address_lines)) * 5 * mm + 20 * mm)
+    divider_h = 3 * mm
+    items_h = (2 + len(item_lines)) * 5.5 * mm
+    remarks_h = (2 + len(remarks_lines)) * 5 * mm if remarks_lines else 0
+    footer_h = 10 * mm
+    padding_total = 10 * mm
+
+    label_height = (
+        header_h + do_section_h + barcode_h +
+        qr_customer_h + divider_h + items_h +
+        remarks_h + footer_h + padding_total
+    )
+
+    # Minimum 150mm, maximum auto-expand
+    label_height = max(label_height, 150 * mm)
 
     c = canvas.Canvas(buffer, pagesize=(LABEL_WIDTH, label_height))
     y = label_height  # Start from top
