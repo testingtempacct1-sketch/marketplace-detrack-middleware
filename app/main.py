@@ -1,6 +1,12 @@
 import json
 from pathlib import Path
 
+import logging
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(message)s",
+)
+
 from fastapi import Body, Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, Response
 from sqlalchemy.orm import Session
