@@ -71,8 +71,15 @@ def print_label(pdf_bytes: bytes, title: str = "Shipping Label") -> dict:
     try:
         # Convert PDF to PNG for correct sizing
         png_bytes = _pdf_to_png(pdf_bytes)
-        content_type = "png_base64"
-        content_bytes = png_bytes
+        
+        # If PNG conversion succeeded, use raw_base64
+        # If it fell back to PDF, use pdf_base64
+        if png_bytes != pdf_bytes:
+            content_type = "raw_base64"
+            content_bytes = png_bytes
+        else:
+            content_type = "pdf_base64"
+            content_bytes = pdf_bytes
 
         encoded = base64.b64encode(content_bytes).decode("utf-8")
 
