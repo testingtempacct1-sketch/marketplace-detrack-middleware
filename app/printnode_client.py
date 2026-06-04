@@ -78,6 +78,11 @@ def print_label(pdf_bytes: bytes, title: str = "Shipping Label") -> dict:
             "contentType": "pdf_base64",
             "content": pdf_base64,
             "source": "Zen Zu Fu Middleware",
+            "options": {
+                "paper": "w103h193",
+                "fit_to_page": False,
+                "rotate": "0",
+            }
         }
 
         response = requests.post(
