@@ -48,12 +48,13 @@ def _cjk_font(size: int, bold: bool = False) -> tuple[str, int]:
         return CJK_FONT, size
     return ("Helvetica-Bold" if bold else "Helvetica"), size
 
-# Label dimensions for DK-22246 (103mm wide continuous roll)
-# Printing at 100mm x 150mm for better fit
-LABEL_WIDTH_MM = 100
+# Label dimensions for DK-22246
+# Brother QL-1110NWB printable width is ~102mm
+LABEL_WIDTH_MM = 102
 LABEL_WIDTH = LABEL_WIDTH_MM * mm
 
-# Colors
+# Margins
+PADDING = 5 * mm
 COLOR_DARK = colors.HexColor("#2C2C2A")
 COLOR_GREEN = colors.HexColor("#1D9E75")
 COLOR_LIGHT = colors.HexColor("#F1EFE8")
@@ -67,7 +68,7 @@ SOURCE_COLORS = {
     "shopee": colors.HexColor("#FF6B35"),
 }
 
-PADDING = 6 * mm
+PADDING = 5 * mm
 
 
 def _get_source_label(source: str) -> str:
@@ -169,7 +170,7 @@ def generate_label_pdf(
     # Ensure CJK font is registered
     _ensure_cjk_font()
     # Start with fixed sections and add dynamic content
-    address_lines = _wrap_text(address or "", 38)
+    address_lines = _wrap_text(address or "", 35)
     item_lines = []
     for item in (items or []):
         name = item.get("description") or item.get("name") or "Item"
@@ -301,7 +302,7 @@ def generate_label_pdf(
     c.drawString(info_x, info_y, "DELIVER TO")
 
     c.setFillColor(COLOR_DARK)
-    c.setFont("Helvetica-Bold", 9)
+    c.setFont("Helvetica-Bold", 8)
     c.drawString(info_x, info_y - 5 * mm, customer_name or "")
 
     c.setFont("Helvetica", 8)
