@@ -1,4 +1,5 @@
 import json
+import logging
 from pathlib import Path
 
 from fastapi import Body, Depends, FastAPI, Header, HTTPException, Query, Request
@@ -678,7 +679,7 @@ def sync_detrack_statuses(
 
             if response.status_code == 200:
                 data = response.json().get("data", {})
-                new_status = data.get("status") or data.get("tracking_status_code")
+                new_status = data.get("tracking_status_code") or data.get("status")
 
                 if new_status and new_status != order.delivery_status:
                     old_status = order.delivery_status
