@@ -99,7 +99,70 @@ def _run_daily_summary() -> None:
         db.close()
 
 
-def start_scheduler() -> None:
+def _run_print_retry_job() -> None:
+    """
+    Background job that runs every 5 minutes.
+    Checks if printer is online, then retries failed label prints.
+    """
+    from app.printnode_client import get_printer_info, print_shipping_label
+    from app.models import OrderSync
+
+    db: Session = SessionLocal()
+    try:
+        # Check if PrintNode is configured
+        from app.config import settings
+        if not settings.printnode_api_key or not settings.printnode_printer_id:
+            return
+
+        # Check if printer is online
+        printer = get_printer_info()
+        if not printer:
+            logger.debug("[Scheduler] Printer offline or not found — skipping print retry.")
+            return
+
+        # Check printer state
+        printer_state = printer.get("computer", {}).get("state") if isinstance(printer, dict) else None
+        if printer_state and printer_state != "connected":
+            logger.debug(f"[Scheduler] Printer state: {printer_state} — skipping print retry.")
+            return
+
+        # Find orders with failed label prints
+        failed_prints = (
+            db.query(OrderSync)
+            .filter(OrderSync.label_printed == "failed")
+            .filter(OrderSync.sync_status == "sent_to_detrack")
+            .all()
+        )
+
+        if not failed_prints:
+            return
+
+        logger.info(f"[Scheduler] Printer online — retrying {len(failed_prints)} failed label(s).")
+
+        success = 0
+        for order in failed_prints:
+            result = print_shipping_label(order)
+            if result.get("printed"):
+                order.label_printed = "printed"
+                order.label_print_error = None
+                success += 1
+                logger.info(f"[Scheduler] Label reprinted for order #{order.id} — {order.detrack_do_number}")
+            else:
+                order.label_printed = "failed"
+                order.label_print_error = result.get("reason")
+
+        db.commit()
+
+        if success > 0:
+            logger.info(f"[Scheduler] Print retry complete — {success}/{len(failed_prints)} succeeded.")
+
+    except Exception as exc:
+        logger.error(f"[Scheduler] Print retry job error: {exc}")
+    finally:
+        db.close()
+
+
+
     global _scheduler
 
     if _scheduler and _scheduler.running:
@@ -118,6 +181,15 @@ def start_scheduler() -> None:
     )
 
     _scheduler.add_job(
+        _run_print_retry_job,
+        trigger="interval",
+        minutes=5,
+        id="retry_failed_prints",
+        name="Retry failed label prints",
+        replace_existing=True,
+    )
+
+    _scheduler.add_job(
         _run_daily_summary,
         trigger="cron",
         hour=9,
@@ -129,7 +201,7 @@ def start_scheduler() -> None:
     )
 
     _scheduler.start()
-    logger.info("[Scheduler] Started — retry job every 5min, daily summary at 9:00 AM SGT.")
+    logger.info("[Scheduler] Started — retry job every 5min, print retry every 5min, daily summary at 9:00 AM SGT.")
 
 
 def stop_scheduler() -> None:
