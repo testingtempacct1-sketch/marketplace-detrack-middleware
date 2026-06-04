@@ -262,10 +262,11 @@ def extract_detrack_webhook_info(payload: dict) -> dict:
 
     status = _get_nested(
         payload,
+        ("tracking_status_code",),
         ("status",),
         ("delivery_status",),
         ("job_status",),
-        ("tracking_status",),
+        ("data", "tracking_status_code"),
         ("data", "status"),
         ("data", "delivery_status"),
         ("data", "job_status"),
