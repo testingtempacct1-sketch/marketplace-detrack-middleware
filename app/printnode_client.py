@@ -57,8 +57,8 @@ def get_printer_info() -> dict | None:
 
 def print_label(pdf_bytes: bytes, title: str = "Shipping Label") -> dict:
     """
-    Send a PDF label to PrintNode for printing.
-    Returns the print job response dict.
+    Send a label to PrintNode for printing.
+    Converts PDF to PNG first for correct sizing on Brother QL printers.
     Never raises — printing failures should not break order creation.
     """
     if not _is_configured():
@@ -69,19 +69,19 @@ def print_label(pdf_bytes: bytes, title: str = "Shipping Label") -> dict:
         return {"printed": False, "reason": "PrintNode not configured"}
 
     try:
-        # Encode PDF as base64
-        pdf_base64 = base64.b64encode(pdf_bytes).decode("utf-8")
+        # Convert PDF to PNG for correct sizing
+        png_bytes = _pdf_to_png(pdf_bytes)
+        content_type = "png_base64"
+        content_bytes = png_bytes
+
+        encoded = base64.b64encode(content_bytes).decode("utf-8")
 
         payload = {
             "printerId": int(settings.printnode_printer_id),
             "title": title,
-            "contentType": "pdf_base64",
-            "content": pdf_base64,
+            "contentType": content_type,
+            "content": encoded,
             "source": "Zen Zu Fu Middleware",
-            "options": {
-                "paper": "w103h193",
-                "fit_to_page": False,
-            }
         }
 
         response = requests.post(
@@ -109,6 +109,33 @@ def print_label(pdf_bytes: bytes, title: str = "Shipping Label") -> dict:
     except Exception as exc:
         logger.error(f"[PrintNode] Exception: {exc}")
         return {"printed": False, "reason": str(exc)}
+
+
+def _pdf_to_png(pdf_bytes: bytes) -> bytes:
+    """
+    Convert PDF to PNG at 300 DPI for correct physical sizing on Brother QL printer.
+    Brother QL-1110NWB prints at 300 DPI.
+    103mm wide × 300 DPI / 25.4 = ~1217 pixels wide
+    """
+    try:
+        import fitz  # PyMuPDF
+        doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+        page = doc[0]
+
+        # 300 DPI scaling: 300/72 = 4.167
+        mat = fitz.Matrix(300 / 72, 300 / 72)
+        pix = page.get_pixmap(matrix=mat, alpha=False)
+
+        png_bytes = pix.tobytes("png")
+        doc.close()
+        return png_bytes
+
+    except ImportError:
+        logger.warning("[PrintNode] PyMuPDF not installed, falling back to PDF")
+        return pdf_bytes
+    except Exception as e:
+        logger.warning(f"[PrintNode] PDF to PNG conversion failed: {e}, falling back to PDF")
+        return pdf_bytes
 
 
 def print_shipping_label(order_sync) -> dict:
