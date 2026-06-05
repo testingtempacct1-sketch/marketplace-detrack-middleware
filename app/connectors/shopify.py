@@ -75,9 +75,10 @@ def shopify_order_to_standard(payload: dict) -> StandardOrder:
     note = payload.get("note") or ""
     order_name = payload.get("name") or order_id
 
-    # Detect TikTok orders via note field or source_name
+    # Detect TikTok orders via note, source_name or tags
     source_name = payload.get("source_name") or ""
-    if "tiktok" in note.lower() or "tiktok" in source_name.lower():
+    tags = payload.get("tags") or ""
+    if "tiktok" in note.lower() or "tiktok" in source_name.lower() or "tiktok" in tags.lower():
         source = "tiktok_shop"
     else:
         source = "shopify"
