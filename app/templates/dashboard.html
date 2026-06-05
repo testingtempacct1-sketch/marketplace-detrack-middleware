@@ -708,6 +708,10 @@
       <span id="label-detrack">Detrack API: checking...</span>
     </div>
     <div class="health-item">
+      <div class="health-dot checking" id="dot-ssl"></div>
+      <span id="label-ssl">SSL: checking...</span>
+    </div>
+    <div class="health-item">
       <div class="health-dot" id="dot-overall"></div>
       <span id="label-overall">System: checking...</span>
     </div>
@@ -1058,18 +1062,18 @@ async function loadHealth() {
     const checks = data.checks || {};
     const dbOk = checks.database?.ok ?? true;
     const detrackOk = checks.detrack_api?.ok ?? true;
-    const systemOk = dbOk && detrackOk;
+    const sslOk = checks.ssl_certificate?.ok ?? true;
+    const sslDays = checks.ssl_certificate?.days_remaining;
+    const systemOk = dbOk && detrackOk && sslOk;
 
-    const dotDb = document.getElementById('dot-db');
-    const dotDetrack = document.getElementById('dot-detrack');
-    const dotOverall = document.getElementById('dot-overall');
-
-    dotDb.className = `health-dot ${dbOk ? 'ok' : 'error'}`;
-    dotDetrack.className = `health-dot ${detrackOk ? 'ok' : 'error'}`;
-    dotOverall.className = `health-dot ${systemOk ? 'ok' : 'error'}`;
+    document.getElementById('dot-db').className = `health-dot ${dbOk ? 'ok' : 'error'}`;
+    document.getElementById('dot-detrack').className = `health-dot ${detrackOk ? 'ok' : 'error'}`;
+    document.getElementById('dot-ssl').className = `health-dot ${sslOk ? 'ok' : 'error'}`;
+    document.getElementById('dot-overall').className = `health-dot ${systemOk ? 'ok' : 'error'}`;
 
     document.getElementById('label-db').textContent = `Database: ${dbOk ? 'connected' : 'error — ' + (checks.database?.error || 'unknown')}`;
     document.getElementById('label-detrack').textContent = `Detrack API: ${detrackOk ? 'reachable' : 'error — ' + (checks.detrack_api?.error || 'unknown')}`;
+    document.getElementById('label-ssl').textContent = `SSL: ${sslOk ? `valid (${sslDays} days)` : sslDays ? `expiring soon (${sslDays} days)` : 'error'}`;
     document.getElementById('label-overall').textContent = `System: ${systemOk ? 'ok' : 'degraded'}`;
 
     document.getElementById('stat-retry').textContent = data.detrack_failed_pending_retry ?? '0';
