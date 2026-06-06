@@ -117,7 +117,7 @@ def _items_from_json(items_json: str | None) -> list[StandardOrderItem]:
 
 
 def _shopify_fields(order: StandardOrder) -> dict:
-    if not order.source.startswith("shopify"):
+    if order.source not in ("shopify", "tiktok_shop", "shopify_draft_order"):
         return {
             "shopify_order_id": None,
             "shopify_order_name": None,
