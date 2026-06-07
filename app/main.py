@@ -844,27 +844,8 @@ def mark_order_collected(
     order.delivery_status = "completed"
     order.updated_at = datetime.utcnow()
 
-    detrack_result = None
+    detrack_result = {"skipped": True, "reason": "Self collect — Detrack requires driver assignment to complete"}
     shopify_result = None
-
-    # Complete Detrack job if exists
-    if order.detrack_job_id:
-        try:
-            response = req.put(
-                f"{settings.detrack_base_url}/{order.detrack_job_id}",
-                headers={
-                    "Content-Type": "application/json",
-                    "X-API-Key": settings.detrack_api_key,
-                },
-                json={"data": {"status": "completed"}},
-                timeout=10,
-            )
-            detrack_result = {
-                "updated": response.status_code < 400,
-                "status_code": response.status_code,
-            }
-        except Exception as exc:
-            detrack_result = {"updated": False, "error": str(exc)}
 
     # Fulfill in Shopify if applicable
     if order.shopify_order_id and order.source in ("shopify", "tiktok_shop", "shopify_draft_order"):
