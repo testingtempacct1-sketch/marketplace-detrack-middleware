@@ -678,13 +678,17 @@ def print_custom_label(
 
     print_result = print_label(pdf_bytes, title=f"Custom Label — {do_number}")
 
-    # Optionally create Detrack job
+    # Optionally create Detrack job and save to DB
     detrack_result = None
     if create_detrack_job:
         try:
             from app.detrack_client import create_detrack_job as create_job
             from app.schemas import StandardOrder, StandardOrderItem
             from app.mapper import map_standard_order_to_detrack
+            from app.models import OrderSync
+            from app.database import get_db as get_db_session
+            from datetime import datetime
+            import json as json_module
 
             std_items = [
                 StandardOrderItem(
@@ -697,7 +701,7 @@ def print_custom_label(
             order = StandardOrder(
                 source=source,
                 source_order_id=do_number,
-                source_order_name=do_number.replace("ZF-SH-", "").replace("ZF-TT-", "").replace("ZF-WA-", ""),
+                source_order_name=do_number,
                 customer_name=customer_name,
                 phone=phone,
                 address=address,
@@ -708,11 +712,43 @@ def print_custom_label(
             )
 
             detrack_payload = map_standard_order_to_detrack(order)
-            # Override DO number with the provided one
             detrack_payload["data"]["do_number"] = do_number
             detrack_response = create_job(detrack_payload)
             job_id = detrack_response.get("data", {}).get("id")
-            detrack_result = {"created": True, "job_id": job_id}
+
+            # Save to DB
+            db_gen = get_db_session()
+            db = next(db_gen)
+            try:
+                items_json = json_module.dumps([
+                    {"name": item.name, "quantity": item.quantity}
+                    for item in std_items
+                ])
+                order_sync = OrderSync(
+                    source=source,
+                    source_order_id=do_number,
+                    shopify_order_id=None,
+                    shopify_order_name=None,
+                    customer_name=customer_name,
+                    phone=phone,
+                    address=address,
+                    postal_code=postal_code or None,
+                    items_json=items_json,
+                    remarks=remarks or None,
+                    delivery_date=delivery_date or None,
+                    detrack_do_number=do_number,
+                    detrack_job_id=job_id,
+                    sync_status="sent_to_detrack",
+                    delivery_status="created",
+                    label_printed="printed" if print_result.get("printed") else "failed",
+                    label_print_error=print_result.get("reason"),
+                    retry_count=0,
+                )
+                db.add(order_sync)
+                db.commit()
+                detrack_result = {"created": True, "job_id": job_id, "order_sync_id": order_sync.id}
+            finally:
+                db.close()
         except Exception as exc:
             detrack_result = {"created": False, "error": str(exc)}
 
