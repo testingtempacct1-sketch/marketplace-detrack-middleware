@@ -73,6 +73,15 @@ def print_label(pdf_bytes: bytes, title: str = "Shipping Label") -> dict:
         return {"printed": False, "reason": "PrintNode not configured"}
 
     try:
+        # Check printer is online before submitting
+        printer_info = get_printer_info()
+        if printer_info:
+            printer_state = printer_info.get("state", "")
+            if printer_state != "online":
+                error_msg = f"Printer is {printer_state} — please turn on the printer"
+                logger.warning(f"[PrintNode] {error_msg}")
+                return {"printed": False, "reason": error_msg}
+
         # Convert PDF to PNG for correct sizing
         png_bytes = _pdf_to_png(pdf_bytes)
         
