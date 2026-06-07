@@ -923,6 +923,27 @@ def create_whatsapp_order(
     }
 
 
+@app.delete("/orders/{order_sync_id}")
+def delete_order(
+    order_sync_id: int,
+    _: bool = Depends(require_admin_key),
+    db: Session = Depends(get_db),
+):
+    """Delete an order from the dashboard. Does not affect Detrack."""
+    order = db.query(OrderSync).filter(OrderSync.id == order_sync_id).first()
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found.")
+
+    db.delete(order)
+    db.commit()
+
+    return {
+        "deleted": True,
+        "order_sync_id": order_sync_id,
+        "message": f"Order #{order_sync_id} deleted successfully.",
+    }
+
+
 @app.post("/orders/{order_sync_id}/mark-collected")
 def mark_order_collected(
     order_sync_id: int,

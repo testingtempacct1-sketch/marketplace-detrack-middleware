@@ -1219,6 +1219,8 @@ function renderRecentTable(orders) {
           ? `<span style="font-size:9px;color:var(--green);margin-left:4px" title="Collected at ${fmtDate(o.collected_at)}">✓COL</span>`
           : `<button class="action-btn" style="margin-left:2px;padding:3px 5px;font-size:9px;border-color:var(--green);color:var(--green)"
               onclick="markCollected(${o.id}, this)" title="Mark as collected">✓COL</button>`}
+        <button class="action-btn" style="margin-left:2px;padding:3px 5px;font-size:9px;border-color:var(--red);color:var(--red)"
+          onclick="deleteOrder(${o.id}, this)" title="Delete order">🗑</button>
       </td>
     </tr>
     <tr class="log-row" id="log-row-${o.id}" style="display:none">
@@ -1367,6 +1369,29 @@ function fmtDate(iso) {
     hour: '2-digit', minute: '2-digit',
     hour12: false, timeZone: 'Asia/Singapore'
   });
+}
+
+async function deleteOrder(id, btn) {
+  if (!confirm(`Delete order #${id}?\n\nThis will permanently remove it from the dashboard.\nThe Detrack job will NOT be affected.`)) return;
+
+  if (btn) { btn.disabled = true; btn.textContent = '...'; }
+  try {
+    const r = await fetch(`/orders/${id}`, {
+      method: 'DELETE',
+      headers: { 'X-Admin-Key': apiKey },
+    });
+    const data = await r.json();
+    if (data.deleted) {
+      showToast(`✓ Order #${id} deleted`, 'success');
+      await loadAll();
+    } else {
+      showToast(`✗ ${data.message || 'Failed to delete'}`, 'error');
+    }
+  } catch(e) {
+    showToast(`✗ Error: ${e.message}`, 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '🗑'; }
+  }
 }
 
 // ── MARK COLLECTED ────────────────────────────────────
