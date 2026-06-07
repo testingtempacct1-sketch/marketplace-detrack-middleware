@@ -685,6 +685,20 @@ def print_custom_label(
 
     print_result = print_label(pdf_bytes, title=f"Custom Label — {do_number}")
 
+    # Send Telegram alert if print failed
+    if not print_result.get("printed"):
+        try:
+            from app.telegram_client import send_print_failure_alert
+            send_print_failure_alert(
+                order_sync_id=0,
+                source=source,
+                source_order_id=do_number,
+                detrack_do_number=do_number,
+                error=print_result.get("reason", "Unknown error"),
+            )
+        except Exception as tel_exc:
+            logging.warning(f"[CustomLabel] Telegram alert failed: {tel_exc}")
+
     # Optionally create Detrack job and save to DB
     detrack_result = None
     if create_detrack_job:
@@ -891,9 +905,22 @@ def create_whatsapp_order(
 
     if print_result.get("printed"):
         order_sync.label_printed = "printed"
+        order_sync.label_print_error = None
     else:
         order_sync.label_printed = "failed"
         order_sync.label_print_error = print_result.get("reason")
+        # Send Telegram alert
+        try:
+            from app.telegram_client import send_print_failure_alert
+            send_print_failure_alert(
+                order_sync_id=order_sync.id,
+                source=order_sync.source,
+                source_order_id=order_sync.source_order_id,
+                detrack_do_number=order_sync.detrack_do_number,
+                error=print_result.get("reason", "Unknown error"),
+            )
+        except Exception as tel_exc:
+            logging.warning(f"[WhatsApp] Telegram alert failed: {tel_exc}")
 
     db.commit()
 
