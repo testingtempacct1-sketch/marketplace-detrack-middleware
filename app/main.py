@@ -237,13 +237,20 @@ def order_stats(
 
 @app.get("/orders/recent")
 def recent_orders(
-    limit: int = Query(default=20, ge=1, le=100),
+    limit: int = Query(default=50, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
     _: bool = Depends(require_admin_key),
     db: Session = Depends(get_db),
 ):
+    from sqlalchemy import func
+    total = db.query(func.count(OrderSync.id)).scalar()
+    orders = list_recent_order_syncs(db, limit=limit, offset=offset)
     return {
-        "count": limit,
-        "orders": list_recent_order_syncs(db, limit=limit),
+        "count": len(orders),
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+        "orders": orders,
     }
 
 

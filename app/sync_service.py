@@ -388,12 +388,14 @@ def update_delivery_status_from_detrack(db: Session, payload: dict) -> dict:
 # Order sync helpers
 # ---------------------------------------------------------------------------
 
-def list_recent_order_syncs(db: Session, limit: int = 20) -> list[dict]:
+def list_recent_order_syncs(db: Session, limit: int = 50, offset: int = 0) -> list[dict]:
     safe_limit = max(1, min(limit, 100))
+    safe_offset = max(0, offset)
 
     records = (
         db.query(OrderSync)
         .order_by(OrderSync.id.desc())
+        .offset(safe_offset)
         .limit(safe_limit)
         .all()
     )

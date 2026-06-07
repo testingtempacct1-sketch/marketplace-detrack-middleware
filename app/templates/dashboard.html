@@ -835,7 +835,14 @@
     <div class="section">
       <div class="section-header">
         <div class="section-title">Recent Orders</div>
-        <div class="section-count" id="recent-count">—</div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <div class="section-count" id="recent-count">—</div>
+          <div style="display:flex;align-items:center;gap:4px" id="pagination-controls" style="display:none">
+            <button class="action-btn" id="prev-btn" onclick="changePage(-1)" style="padding:3px 8px;font-size:10px" disabled>◀ PREV</button>
+            <span id="page-info" style="font-family:var(--font-mono);font-size:10px;color:var(--text3)">Page 1</span>
+            <button class="action-btn" id="next-btn" onclick="changePage(1)" style="padding:3px 8px;font-size:10px">NEXT ▶</button>
+          </div>
+        </div>
       </div>
       <div id="recent-table-wrap" class="table-wrap">
         <div class="loading blink">LOADING...</div>
@@ -1139,17 +1146,43 @@ function renderFailedTable(orders) {
 }
 
 // ── RECENT ORDERS ─────────────────────────────────────
+const PAGE_SIZE = 50;
+let currentPage = 0;
+let totalOrders = 0;
+
 async function loadRecent() {
   try {
-    const data = await apiFetch('/orders/recent?limit=50');
+    const offset = currentPage * PAGE_SIZE;
+    const data = await apiFetch(`/orders/recent?limit=${PAGE_SIZE}&offset=${offset}`);
     const orders = data.orders || [];
-    document.getElementById('recent-count').textContent = `${orders.length} orders`;
+    totalOrders = data.total || orders.length;
+    const totalPages = Math.ceil(totalOrders / PAGE_SIZE);
+
+    document.getElementById('recent-count').textContent = `${totalOrders} orders`;
+
+    // Update pagination controls
+    const paginationControls = document.getElementById('pagination-controls');
+    if (totalOrders > PAGE_SIZE) {
+      paginationControls.style.display = 'flex';
+      document.getElementById('page-info').textContent = `Page ${currentPage + 1} of ${totalPages}`;
+      document.getElementById('prev-btn').disabled = currentPage === 0;
+      document.getElementById('next-btn').disabled = currentPage >= totalPages - 1;
+    } else {
+      paginationControls.style.display = 'none';
+    }
+
     renderRecentTable(orders);
     updateStatsFromRecent(orders);
     renderDetrackBreakdown(orders);
   } catch(e) {
     document.getElementById('recent-table-wrap').innerHTML = `<div class="empty">Error loading recent orders.</div>`;
   }
+}
+
+function changePage(direction) {
+  const totalPages = Math.ceil(totalOrders / PAGE_SIZE);
+  currentPage = Math.max(0, Math.min(currentPage + direction, totalPages - 1));
+  loadRecent();
 }
 
 function renderRecentTable(orders) {
