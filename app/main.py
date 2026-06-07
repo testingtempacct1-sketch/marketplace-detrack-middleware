@@ -871,7 +871,7 @@ def mark_order_collected(
         try:
             shopify_result = create_shopify_fulfilment(
                 shopify_order_id=order.shopify_order_id,
-                detrack_do_number=order.detrack_do_number,
+                tracking_number=order.detrack_do_number,
             )
         except Exception as exc:
             shopify_result = {"created": False, "error": str(exc)}
