@@ -654,6 +654,7 @@ def print_custom_label(
     delivery_date: str = Body(default=""),
     items: list = Body(default=[]),
     remarks: str = Body(default=""),
+    create_detrack_job: bool = Body(default=False),
     _: bool = Depends(require_admin_key),
 ):
     """Print a custom label without needing a Shopify order."""
@@ -675,8 +676,47 @@ def print_custom_label(
         delivery_date=delivery_date or None,
     )
 
-    result = print_label(pdf_bytes, title=f"Custom Label — {do_number}")
-    return result
+    print_result = print_label(pdf_bytes, title=f"Custom Label — {do_number}")
+
+    # Optionally create Detrack job
+    detrack_result = None
+    if create_detrack_job:
+        try:
+            from app.detrack_client import create_detrack_job as create_job
+            from app.schemas import StandardOrder, StandardOrderItem
+            from app.mapper import map_standard_order_to_detrack
+
+            std_items = [
+                StandardOrderItem(
+                    name=item.get("name", "Item"),
+                    quantity=item.get("quantity", 1),
+                )
+                for item in items
+            ]
+
+            order = StandardOrder(
+                source=source,
+                source_order_id=do_number,
+                source_order_name=do_number.replace("ZF-SH-", "").replace("ZF-TT-", "").replace("ZF-WA-", ""),
+                customer_name=customer_name,
+                phone=phone,
+                address=address,
+                postal_code=postal_code or None,
+                items=std_items,
+                remarks=remarks or None,
+                delivery_date=delivery_date or None,
+            )
+
+            detrack_payload = map_standard_order_to_detrack(order)
+            # Override DO number with the provided one
+            detrack_payload["data"]["do_number"] = do_number
+            detrack_response = create_job(detrack_payload)
+            job_id = detrack_response.get("data", {}).get("id")
+            detrack_result = {"created": True, "job_id": job_id}
+        except Exception as exc:
+            detrack_result = {"created": False, "error": str(exc)}
+
+    return {**print_result, "detrack_result": detrack_result}
 
 
 @app.get("/admin/print-custom-label/preview")
@@ -722,6 +762,7 @@ def create_whatsapp_order(
     delivery_date: str = Body(default=""),
     items: list = Body(default=[]),
     remarks: str = Body(default=""),
+    create_detrack_job: bool = Body(default=False),
     _: bool = Depends(require_admin_key),
     db: Session = Depends(get_db),
 ):
@@ -813,12 +854,29 @@ def create_whatsapp_order(
 
     db.commit()
 
+    # Optionally create Detrack job
+    detrack_result = None
+    if create_detrack_job:
+        try:
+            from app.detrack_client import create_detrack_job as create_job
+            from app.mapper import map_standard_order_to_detrack
+            detrack_payload = map_standard_order_to_detrack(order)
+            detrack_response = create_job(detrack_payload)
+            order_sync.detrack_job_id = detrack_response.get("data", {}).get("id")
+            order_sync.delivery_status = "created"
+            order_sync.sync_status = "sent_to_detrack"
+            db.commit()
+            detrack_result = {"created": True, "job_id": order_sync.detrack_job_id}
+        except Exception as exc:
+            detrack_result = {"created": False, "error": str(exc)}
+
     return {
         "created": True,
         "order_sync_id": order_sync.id,
         "do_number": do_number,
         "label_printed": order_sync.label_printed,
         "print_result": print_result,
+        "detrack_result": detrack_result,
     }
 
 

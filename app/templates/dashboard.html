@@ -1406,6 +1406,7 @@ async function createWhatsAppOrder() {
       delivery_date: document.getElementById('wa-delivery-date').value,
       items: items,
       remarks: document.getElementById('wa-remarks').value.trim(),
+      create_detrack_job: document.getElementById('wa-create-detrack').checked,
     };
 
     const r = await fetch('/orders/whatsapp', {
@@ -1489,6 +1490,7 @@ async function printCustomLabel() {
       delivery_date: document.getElementById('cp-delivery-date').value,
       items: items,
       remarks: document.getElementById('cp-remarks').value.trim(),
+      create_detrack_job: document.getElementById('cp-create-detrack').checked,
     };
 
     const r = await fetch('/admin/print-custom-label', {
@@ -1747,6 +1749,12 @@ function showToast(msg, type) {
         <label class="form-label">Remarks</label>
         <textarea class="form-input" id="wa-remarks" placeholder="e.g. Bitter ones please"></textarea>
       </div>
+      <div style="display:flex;align-items:center;gap:8px;margin-top:8px">
+        <input type="checkbox" id="wa-create-detrack" style="accent-color:var(--green)"/>
+        <label style="font-family:var(--font-mono);font-size:11px;color:var(--text2);cursor:pointer" for="wa-create-detrack">
+          Create Detrack job
+        </label>
+      </div>
     </div>
     <div class="modal-footer">
       <button class="action-btn" onclick="closeWhatsAppOrderModal()">CANCEL</button>
@@ -1802,6 +1810,12 @@ function showToast(msg, type) {
       <div class="form-group">
         <label class="form-label">Remarks</label>
         <textarea class="form-input" id="cp-remarks"></textarea>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;margin-top:8px">
+        <input type="checkbox" id="cp-create-detrack" style="accent-color:var(--green)"/>
+        <label style="font-family:var(--font-mono);font-size:11px;color:var(--text2);cursor:pointer" for="cp-create-detrack">
+          Create Detrack job
+        </label>
       </div>
     </div>
     <div class="modal-footer">
