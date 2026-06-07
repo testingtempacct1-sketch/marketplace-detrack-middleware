@@ -77,6 +77,8 @@ def _get_source_label(source: str) -> str:
         return "TIKTOK"
     if "shopee" in s:
         return "SHOPEE"
+    if "whatsapp" in s:
+        return "WHATSAPP"
     return "SHOPIFY"
 
 
@@ -86,6 +88,8 @@ def _get_source_color(source: str) -> colors.Color:
         return SOURCE_COLORS["tiktok_shop"]
     if "shopee" in s:
         return SOURCE_COLORS["shopee"]
+    if "whatsapp" in s:
+        return colors.HexColor("#25D366")  # WhatsApp green
     return SOURCE_COLORS["shopify"]
 
 

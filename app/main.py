@@ -788,7 +788,7 @@ def create_whatsapp_order(
 
     order = StandardOrder(
         source="whatsapp",
-        source_order_id=f"WA-{datetime.now().strftime('%Y%m%d%H%M%S')}",
+        source_order_id=f"{datetime.now().strftime('%Y%m%d%H%M%S')}",
         source_order_name=None,
         customer_name=customer_name,
         phone=phone,
