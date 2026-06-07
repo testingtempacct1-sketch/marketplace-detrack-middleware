@@ -41,6 +41,9 @@ class OrderSync(Base):
     label_printed = Column(String(20), nullable=True)  # "printed", "failed", "skipped"
     label_print_error = Column(Text, nullable=True)
 
+    # Self collect tracking
+    collected_at = Column(DateTime, nullable=True)
+
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow)
 

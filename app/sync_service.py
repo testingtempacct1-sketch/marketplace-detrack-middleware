@@ -155,6 +155,7 @@ def _order_sync_to_dict(order_sync: OrderSync) -> dict:
         "next_retry_at": order_sync.next_retry_at.isoformat() if order_sync.next_retry_at else None,
         "label_printed": order_sync.label_printed,
         "label_print_error": order_sync.label_print_error,
+        "collected_at": order_sync.collected_at.isoformat() if order_sync.collected_at else None,
         "created_at": order_sync.created_at.isoformat() if order_sync.created_at else None,
         "updated_at": order_sync.updated_at.isoformat() if order_sync.updated_at else None,
     }

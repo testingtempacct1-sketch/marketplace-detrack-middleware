@@ -694,6 +694,8 @@
     </div>
     <div class="topbar-right">
       <div class="refresh-indicator" id="refresh-indicator">Auto-refresh in <span id="countdown">30</span>s</div>
+      <button class="action-btn" style="margin-right:4px;padding:6px 12px;font-size:10px" onclick="openWhatsAppOrderModal()">💬 WHATSAPP ORDER</button>
+      <button class="action-btn retry" style="margin-right:8px;padding:6px 12px;font-size:10px" onclick="openCustomPrintModal()">🖨 CUSTOM LABEL</button>
       <button class="logout-btn" onclick="logout()">LOGOUT</button>
     </div>
   </div>
@@ -1180,6 +1182,10 @@ function renderRecentTable(orders) {
           onclick="openEditModalById(${o.id})" title="Edit order">✏</button>
         <button class="action-btn retry" style="margin-left:2px;padding:3px 5px;font-size:9px"
           onclick="reprintLabel(${o.id}, this)" title="Reprint label">↺</button>
+        ${o.collected_at
+          ? `<span style="font-size:9px;color:var(--green);margin-left:4px" title="Collected at ${fmtDate(o.collected_at)}">✓COL</span>`
+          : `<button class="action-btn" style="margin-left:2px;padding:3px 5px;font-size:9px;border-color:var(--green);color:var(--green)"
+              onclick="markCollected(${o.id}, this)" title="Mark as collected">✓COL</button>`}
       </td>
     </tr>
     <tr class="log-row" id="log-row-${o.id}" style="display:none">
@@ -1293,12 +1299,14 @@ function sourceBadge(source) {
   const s = (source || '').toLowerCase();
   if (s.includes('tiktok')) return `<span class="badge badge-purple">TIKTOK</span>`;
   if (s.includes('shopee')) return `<span class="badge badge-amber">SHOPEE</span>`;
+  if (s.includes('whatsapp')) return `<span class="badge badge-green">WHATSAPP</span>`;
   return `<span class="badge badge-blue">SHOPIFY</span>`;
 }
 
 function statusBadge(status) {
   const s = (status || '').toLowerCase();
   if (s === 'sent_to_detrack') return `<span class="badge badge-green">SYNCED</span>`;
+  if (s === 'whatsapp_order') return `<span class="badge badge-green">WHATSAPP</span>`;
   if (s === 'cancelled') return `<span class="badge badge-gray">CANCELLED</span>`;
   if (s === 'detrack_failed') return `<span class="badge badge-amber">FAILED</span>`;
   if (s === 'detrack_failed_permanent') return `<span class="badge badge-red">PERM FAILED</span>`;
@@ -1326,6 +1334,193 @@ function fmtDate(iso) {
     hour: '2-digit', minute: '2-digit',
     hour12: false, timeZone: 'Asia/Singapore'
   });
+}
+
+// ── MARK COLLECTED ────────────────────────────────────
+async function markCollected(id, btn) {
+  if (!confirm(`Mark order #${id} as collected?\n\nThis will:\n- Mark as completed in our system\n- Complete the Detrack job (if exists)\n- Fulfill in Shopify/TikTok (if applicable)`)) return;
+
+  if (btn) { btn.disabled = true; btn.textContent = '...'; }
+  try {
+    const r = await fetch(`/orders/${id}/mark-collected`, {
+      method: 'POST',
+      headers: { 'X-Admin-Key': apiKey },
+    });
+    const data = await r.json();
+    if (data.collected) {
+      showToast(`✓ Order #${id} marked as collected`, 'success');
+      await loadAll();
+    } else {
+      showToast(`✗ ${data.message || 'Failed'}`, 'error');
+    }
+  } catch(e) {
+    showToast(`✗ Error: ${e.message}`, 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '✓COL'; }
+  }
+}
+
+// ── WHATSAPP ORDER ────────────────────────────────────
+function openWhatsAppOrderModal() {
+  const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Singapore' });
+  document.getElementById('wa-delivery-date').value = today;
+  document.getElementById('wa-customer-name').value = '';
+  document.getElementById('wa-phone').value = '';
+  document.getElementById('wa-address').value = '';
+  document.getElementById('wa-postal-code').value = '';
+  document.getElementById('wa-items').value = '';
+  document.getElementById('wa-remarks').value = '';
+  document.getElementById('wa-order-modal').style.display = 'flex';
+}
+
+function closeWhatsAppOrderModal() {
+  document.getElementById('wa-order-modal').style.display = 'none';
+}
+
+async function createWhatsAppOrder() {
+  const customerName = document.getElementById('wa-customer-name').value.trim();
+  const address = document.getElementById('wa-address').value.trim();
+
+  if (!customerName || !address) {
+    showToast('✗ Customer Name and Address are required', 'error');
+    return;
+  }
+
+  const itemsText = document.getElementById('wa-items').value.trim();
+  const items = itemsText ? itemsText.split('\n').filter(l => l.trim()).map(line => {
+    const match = line.match(/^(.+?)\s+x(\d+)$/i);
+    if (match) return { name: match[1].trim(), quantity: parseInt(match[2]) };
+    return { name: line.trim(), quantity: 1 };
+  }) : [];
+
+  const btn = document.getElementById('wa-submit-btn');
+  btn.disabled = true;
+  btn.textContent = '...';
+
+  try {
+    const body = {
+      customer_name: customerName,
+      phone: document.getElementById('wa-phone').value.trim(),
+      address: address,
+      postal_code: document.getElementById('wa-postal-code').value.trim(),
+      delivery_date: document.getElementById('wa-delivery-date').value,
+      items: items,
+      remarks: document.getElementById('wa-remarks').value.trim(),
+    };
+
+    const r = await fetch('/orders/whatsapp', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Admin-Key': apiKey,
+      },
+      body: JSON.stringify(body),
+    });
+
+    const data = await r.json();
+
+    if (data.created) {
+      showToast(`✓ WhatsApp order created — ${data.do_number}`, 'success');
+      closeWhatsAppOrderModal();
+      await loadAll();
+    } else {
+      showToast('✗ Failed to create order', 'error');
+    }
+
+  } catch(e) {
+    showToast(`✗ Error: ${e.message}`, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'CREATE + PRINT';
+  }
+}
+
+// ── CUSTOM PRINT LABEL ────────────────────────────────
+function openCustomPrintModal() {
+  // Set today's date as default
+  const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Singapore' });
+  document.getElementById('cp-delivery-date').value = today;
+  document.getElementById('cp-do-number').value = '';
+  document.getElementById('cp-customer-name').value = '';
+  document.getElementById('cp-phone').value = '';
+  document.getElementById('cp-address').value = '';
+  document.getElementById('cp-postal-code').value = '';
+  document.getElementById('cp-items').value = '';
+  document.getElementById('cp-remarks').value = '';
+  document.getElementById('cp-preview-btn').style.display = 'none';
+  document.getElementById('custom-print-modal').style.display = 'flex';
+}
+
+function closeCustomPrintModal() {
+  document.getElementById('custom-print-modal').style.display = 'none';
+}
+
+async function printCustomLabel() {
+  const doNumber = document.getElementById('cp-do-number').value.trim();
+  const customerName = document.getElementById('cp-customer-name').value.trim();
+  const address = document.getElementById('cp-address').value.trim();
+
+  if (!doNumber || !customerName || !address) {
+    showToast('✗ DO Number, Customer Name and Address are required', 'error');
+    return;
+  }
+
+  // Parse items from text area (one per line)
+  const itemsText = document.getElementById('cp-items').value.trim();
+  const items = itemsText ? itemsText.split('\n').filter(l => l.trim()).map(line => {
+    // Try to parse "Name xQty" format
+    const match = line.match(/^(.+?)\s+x(\d+)$/i);
+    if (match) return { name: match[1].trim(), quantity: parseInt(match[2]) };
+    return { name: line.trim(), quantity: 1 };
+  }) : [{ name: 'Order items', quantity: 1 }];
+
+  const btn = document.getElementById('cp-print-btn');
+  btn.disabled = true;
+  btn.textContent = '...';
+
+  try {
+    const body = {
+      do_number: doNumber,
+      source: document.getElementById('cp-source').value,
+      customer_name: customerName,
+      phone: document.getElementById('cp-phone').value.trim(),
+      address: address,
+      postal_code: document.getElementById('cp-postal-code').value.trim(),
+      delivery_date: document.getElementById('cp-delivery-date').value,
+      items: items,
+      remarks: document.getElementById('cp-remarks').value.trim(),
+    };
+
+    const r = await fetch('/admin/print-custom-label', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Admin-Key': apiKey,
+      },
+      body: JSON.stringify(body),
+    });
+
+    const data = await r.json();
+
+    if (data.printed) {
+      showToast(`✓ Label printed for ${doNumber}`, 'success');
+
+      // Show preview link
+      const previewBtn = document.getElementById('cp-preview-btn');
+      previewBtn.href = `/admin/print-custom-label/preview?key=${apiKey}&do_number=${encodeURIComponent(doNumber)}&customer_name=${encodeURIComponent(customerName)}&address=${encodeURIComponent(address)}&postal_code=${encodeURIComponent(body.postal_code)}&phone=${encodeURIComponent(body.phone)}&source=${body.source}&delivery_date=${body.delivery_date}&remarks=${encodeURIComponent(body.remarks)}`;
+      previewBtn.style.display = 'inline-block';
+
+      closeCustomPrintModal();
+    } else {
+      showToast(`✗ Print failed: ${data.reason || 'Unknown error'}`, 'error');
+    }
+
+  } catch(e) {
+    showToast(`✗ Error: ${e.message}`, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'PRINT';
+  }
 }
 
 // ── EDIT ORDER ────────────────────────────────────────
@@ -1515,6 +1710,112 @@ function showToast(msg, type) {
   setTimeout(() => { t.className = ''; }, 3500);
 }
 </script>
+<!-- WHATSAPP ORDER MODAL -->
+<div id="wa-order-modal" class="modal-overlay" style="display:none" onclick="if(event.target===this)closeWhatsAppOrderModal()">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">💬 New WhatsApp Order</div>
+      <button class="modal-close" onclick="closeWhatsAppOrderModal()">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label class="form-label">Customer Name *</label>
+        <input class="form-input" id="wa-customer-name" type="text" placeholder="John Tan"/>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Phone</label>
+        <input class="form-input" id="wa-phone" type="text" placeholder="91234567"/>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Address *</label>
+        <textarea class="form-input" id="wa-address" placeholder="123 Tampines Street 45, #08-12"></textarea>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Postal Code</label>
+        <input class="form-input" id="wa-postal-code" type="text" placeholder="529538"/>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Collection Date</label>
+        <input class="form-input" id="wa-delivery-date" type="date"/>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Items (one per line, e.g. "Black Thorn 1500g x1")</label>
+        <textarea class="form-input" id="wa-items" style="min-height:80px"
+          placeholder="Black Thorn Durian 1500g x1&#10;Mao Shan Wang 400g x2"></textarea>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Remarks</label>
+        <textarea class="form-input" id="wa-remarks" placeholder="e.g. Bitter ones please"></textarea>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="action-btn" onclick="closeWhatsAppOrderModal()">CANCEL</button>
+      <button class="action-btn retry" id="wa-submit-btn" onclick="createWhatsAppOrder()">CREATE + PRINT</button>
+    </div>
+  </div>
+</div>
+
+<!-- CUSTOM PRINT LABEL MODAL -->
+<div id="custom-print-modal" class="modal-overlay" style="display:none" onclick="if(event.target===this)closeCustomPrintModal()">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">🖨 Print Custom Label</div>
+      <button class="modal-close" onclick="closeCustomPrintModal()">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label class="form-label">DO Number *</label>
+        <input class="form-input" id="cp-do-number" type="text" placeholder="e.g. ZF-SH-1380"/>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Source</label>
+        <select class="form-input" id="cp-source">
+          <option value="shopify">Shopify</option>
+          <option value="tiktok_shop">TikTok</option>
+          <option value="shopee">Shopee</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Customer Name *</label>
+        <input class="form-input" id="cp-customer-name" type="text"/>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Phone</label>
+        <input class="form-input" id="cp-phone" type="text"/>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Address *</label>
+        <textarea class="form-input" id="cp-address"></textarea>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Postal Code</label>
+        <input class="form-input" id="cp-postal-code" type="text"/>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Delivery Date</label>
+        <input class="form-input" id="cp-delivery-date" type="date"/>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Items (one per line, e.g. "Black Thorn 1500g x1")</label>
+        <textarea class="form-input" id="cp-items" style="min-height:80px" placeholder="Black Thorn Durian 1500g x1&#10;Mao Shan Wang 400g x2"></textarea>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Remarks</label>
+        <textarea class="form-input" id="cp-remarks"></textarea>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="action-btn" onclick="closeCustomPrintModal()">CANCEL</button>
+      <a id="cp-preview-btn" href="#" target="_blank"
+        style="font-family:var(--font-mono);font-size:10px;color:var(--text3);
+        text-decoration:none;padding:6px 10px;border:1px solid var(--border2);display:none">
+        👁 PREVIEW
+      </a>
+      <button class="action-btn retry" id="cp-print-btn" onclick="printCustomLabel()">PRINT</button>
+    </div>
+  </div>
+</div>
+
 <!-- EDIT ORDER MODAL -->
 <div id="edit-modal" class="modal-overlay" style="display:none" onclick="if(event.target===this)closeEditModal()">
   <div class="modal">

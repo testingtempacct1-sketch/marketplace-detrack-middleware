@@ -80,6 +80,7 @@ def _migrate_postgresql(conn) -> None:
         "next_retry_at": "TIMESTAMP",
         "label_printed": "VARCHAR(20)",
         "label_print_error": "TEXT",
+        "collected_at": "TIMESTAMP",
     }
 
     for column_name, column_type in columns_to_add.items():

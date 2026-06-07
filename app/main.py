@@ -643,6 +643,306 @@ def admin_cancel_shopee_detrack_job(
     return cancel_shopee_detrack_job(shopee_order_sn)
 
 
+@app.post("/admin/print-custom-label")
+def print_custom_label(
+    do_number: str = Body(...),
+    source: str = Body(default="shopify"),
+    customer_name: str = Body(...),
+    phone: str = Body(default=""),
+    address: str = Body(...),
+    postal_code: str = Body(default=""),
+    delivery_date: str = Body(default=""),
+    items: list = Body(default=[]),
+    remarks: str = Body(default=""),
+    _: bool = Depends(require_admin_key),
+):
+    """Print a custom label without needing a Shopify order."""
+    from app.label_generator import generate_label_pdf
+    from app.printnode_client import print_label
+
+    if not items:
+        items = [{"name": "Order items", "quantity": 1}]
+
+    pdf_bytes = generate_label_pdf(
+        do_number=do_number,
+        source=source,
+        customer_name=customer_name,
+        phone=phone,
+        address=address,
+        postal_code=postal_code or None,
+        items=items,
+        remarks=remarks or None,
+        delivery_date=delivery_date or None,
+    )
+
+    result = print_label(pdf_bytes, title=f"Custom Label — {do_number}")
+    return result
+
+
+@app.get("/admin/print-custom-label/preview")
+def preview_custom_label(
+    do_number: str = Query(...),
+    source: str = Query(default="shopify"),
+    customer_name: str = Query(...),
+    phone: str = Query(default=""),
+    address: str = Query(...),
+    postal_code: str = Query(default=""),
+    delivery_date: str = Query(default=""),
+    remarks: str = Query(default=""),
+    _: bool = Depends(require_admin_key),
+):
+    """Preview a custom label as PDF in browser."""
+    from app.label_generator import generate_label_pdf
+
+    pdf_bytes = generate_label_pdf(
+        do_number=do_number,
+        source=source,
+        customer_name=customer_name,
+        phone=phone,
+        address=address,
+        postal_code=postal_code or None,
+        items=[{"description": "Order items", "quantity": 1}],
+        remarks=remarks or None,
+        delivery_date=delivery_date or None,
+    )
+
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f"inline; filename=custom-{do_number}.pdf"},
+    )
+
+
+@app.post("/orders/whatsapp")
+def create_whatsapp_order(
+    customer_name: str = Body(...),
+    phone: str = Body(default=""),
+    address: str = Body(...),
+    postal_code: str = Body(default=""),
+    delivery_date: str = Body(default=""),
+    items: list = Body(default=[]),
+    remarks: str = Body(default=""),
+    _: bool = Depends(require_admin_key),
+    db: Session = Depends(get_db),
+):
+    """Create a WhatsApp order — saves to DB, prints label, NO Detrack job."""
+    from app.label_generator import generate_label_pdf
+    from app.printnode_client import print_label
+    from app.mapper import _build_detrack_do_number
+    from app.schemas import StandardOrder, StandardOrderItem
+    from datetime import datetime
+
+    if not items:
+        items = [{"name": "Order items", "quantity": 1}]
+
+    # Build StandardOrder
+    std_items = [
+        StandardOrderItem(
+            name=item.get("name", "Item"),
+            quantity=item.get("quantity", 1),
+            sku=item.get("sku"),
+        )
+        for item in items
+    ]
+
+    order = StandardOrder(
+        source="whatsapp",
+        source_order_id=f"WA-{datetime.now().strftime('%Y%m%d%H%M%S')}",
+        source_order_name=None,
+        customer_name=customer_name,
+        phone=phone,
+        address=address,
+        postal_code=postal_code or None,
+        items=std_items,
+        remarks=remarks or None,
+        delivery_date=delivery_date or None,
+    )
+
+    # Generate DO number
+    do_number = _build_detrack_do_number(order)
+    order.source_order_name = do_number.replace("ZF-WA-", "")
+
+    # Save to DB
+    items_json = json.dumps([
+        {"name": item.name, "quantity": item.quantity, "sku": item.sku}
+        for item in std_items
+    ])
+
+    order_sync = OrderSync(
+        source="whatsapp",
+        source_order_id=order.source_order_id,
+        shopify_order_id=None,
+        shopify_order_name=None,
+        customer_name=customer_name,
+        phone=phone,
+        address=address,
+        postal_code=postal_code or None,
+        items_json=items_json,
+        remarks=remarks or None,
+        delivery_date=delivery_date or None,
+        detrack_do_number=do_number,
+        detrack_job_id=None,
+        sync_status="whatsapp_order",
+        delivery_status=None,
+        retry_count=0,
+    )
+    db.add(order_sync)
+    db.commit()
+    db.refresh(order_sync)
+
+    # Print label
+    pdf_bytes = generate_label_pdf(
+        do_number=do_number,
+        source="whatsapp",
+        customer_name=customer_name,
+        phone=phone,
+        address=address,
+        postal_code=postal_code or None,
+        items=[{"description": item.name, "quantity": item.quantity} for item in std_items],
+        remarks=remarks or None,
+        delivery_date=delivery_date or None,
+    )
+
+    print_result = print_label(pdf_bytes, title=f"WhatsApp Label — {do_number}")
+
+    if print_result.get("printed"):
+        order_sync.label_printed = "printed"
+    else:
+        order_sync.label_printed = "failed"
+        order_sync.label_print_error = print_result.get("reason")
+
+    db.commit()
+
+    return {
+        "created": True,
+        "order_sync_id": order_sync.id,
+        "do_number": do_number,
+        "label_printed": order_sync.label_printed,
+        "print_result": print_result,
+    }
+
+
+@app.post("/orders/{order_sync_id}/mark-collected")
+def mark_order_collected(
+    order_sync_id: int,
+    _: bool = Depends(require_admin_key),
+    db: Session = Depends(get_db),
+):
+    """Mark an order as self-collected. For Shopify/TikTok orders, auto-completes Detrack job."""
+    from app.shopify_admin_client import create_shopify_fulfilment
+    from datetime import datetime
+    import requests as req
+
+    order = db.query(OrderSync).filter(OrderSync.id == order_sync_id).first()
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found.")
+
+    if order.collected_at:
+        return {"collected": False, "message": "Order already marked as collected."}
+
+    order.collected_at = datetime.utcnow()
+    order.delivery_status = "completed"
+    order.updated_at = datetime.utcnow()
+
+    detrack_result = None
+    shopify_result = None
+
+    # Complete Detrack job if exists
+    if order.detrack_job_id:
+        try:
+            response = req.put(
+                f"{settings.detrack_base_url}/{order.detrack_job_id}",
+                headers={
+                    "Content-Type": "application/json",
+                    "X-API-Key": settings.detrack_api_key,
+                },
+                json={"data": {"status": "completed"}},
+                timeout=10,
+            )
+            detrack_result = {
+                "updated": response.status_code < 400,
+                "status_code": response.status_code,
+            }
+        except Exception as exc:
+            detrack_result = {"updated": False, "error": str(exc)}
+
+    # Fulfill in Shopify if applicable
+    if order.shopify_order_id and order.source in ("shopify", "tiktok_shop", "shopify_draft_order"):
+        try:
+            shopify_result = create_shopify_fulfilment(
+                shopify_order_id=order.shopify_order_id,
+                detrack_do_number=order.detrack_do_number,
+            )
+        except Exception as exc:
+            shopify_result = {"created": False, "error": str(exc)}
+
+    db.commit()
+
+    return {
+        "collected": True,
+        "order_sync_id": order_sync_id,
+        "do_number": order.detrack_do_number,
+        "detrack_result": detrack_result,
+        "shopify_result": shopify_result,
+    }
+
+
+@app.post("/admin/fulfill-completed-orders")
+def fulfill_completed_orders(
+    _: bool = Depends(require_admin_key),
+    db: Session = Depends(get_db),
+):
+    """Trigger Shopify fulfillment for all completed Detrack orders that haven't been fulfilled yet."""
+    from app.shopify_admin_client import create_shopify_fulfilment
+    from datetime import datetime
+
+    # Find completed orders with shopify_order_id that need fulfillment
+    completed_orders = (
+        db.query(OrderSync)
+        .filter(OrderSync.delivery_status == "completed")
+        .filter(OrderSync.shopify_order_id.isnot(None))
+        .filter(OrderSync.shopify_order_id != "")
+        .filter(OrderSync.sync_status == "sent_to_detrack")
+        .all()
+    )
+
+    if not completed_orders:
+        return {"fulfilled": 0, "message": "No completed orders to fulfill."}
+
+    fulfilled = 0
+    errors = 0
+    results = []
+
+    for order in completed_orders:
+        try:
+            result = create_shopify_fulfilment(
+                shopify_order_id=order.shopify_order_id,
+                detrack_do_number=order.detrack_do_number,
+            )
+            results.append({
+                "id": order.id,
+                "do_number": order.detrack_do_number,
+                "shopify_order_name": order.shopify_order_name,
+                "result": result,
+            })
+            if result.get("created") or result.get("would_call_shopify") == False:
+                fulfilled += 1
+        except Exception as exc:
+            errors += 1
+            results.append({
+                "id": order.id,
+                "do_number": order.detrack_do_number,
+                "error": str(exc),
+            })
+
+    return {
+        "fulfilled": fulfilled,
+        "total": len(completed_orders),
+        "errors": errors,
+        "results": results,
+    }
+
+
 @app.post("/admin/sync-detrack-statuses")
 def sync_detrack_statuses(
     _: bool = Depends(require_admin_key),
