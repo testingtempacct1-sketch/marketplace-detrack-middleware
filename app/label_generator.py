@@ -135,16 +135,27 @@ def _generate_qr_image(do_number: str) -> io.BytesIO:
     return buffer
 
 
+def _char_width(text: str) -> int:
+    """Calculate display width accounting for CJK double-width characters."""
+    width = 0
+    for ch in text:
+        if ord(ch) > 0x2E80:  # CJK and other wide characters
+            width += 2
+        else:
+            width += 1
+    return width
+
 def _wrap_text(text: str, max_chars: int) -> list[str]:
-    """Wrap text to fit within max_chars per line."""
+    """Wrap text to fit within max_chars per line, accounting for CJK width."""
     if not text:
         return []
     words = text.split()
     lines = []
     current_line = ""
     for word in words:
-        if len(current_line) + len(word) + 1 <= max_chars:
-            current_line = f"{current_line} {word}".strip()
+        test_line = f"{current_line} {word}".strip()
+        if _char_width(test_line) <= max_chars:
+            current_line = test_line
         else:
             if current_line:
                 lines.append(current_line)
@@ -179,7 +190,9 @@ def generate_label_pdf(
     for item in (items or []):
         name = item.get("description") or item.get("name") or "Item"
         qty = item.get("quantity") or 1
-        item_lines.append(f"{name}  x{qty}")
+        item_text = f"{name}  x{qty}"
+        wrapped = _wrap_text(item_text, 45)
+        item_lines.extend(wrapped)
 
     remarks_lines = _wrap_text(remarks or "", 50) if remarks else []
 
@@ -306,15 +319,15 @@ def generate_label_pdf(
     c.drawString(info_x, info_y, "DELIVER TO")
 
     c.setFillColor(COLOR_DARK)
-    c.setFont("Helvetica-Bold", 8)
+    c.setFont("Helvetica-Bold", 12)
     c.drawString(info_x, info_y - 5 * mm, customer_name or "")
 
-    c.setFont("Helvetica", 8)
+    c.setFont("Helvetica", 12)
     c.drawString(info_x, info_y - 10 * mm, phone or "")
 
     # Address lines
     addr_y = info_y - 15 * mm
-    c.setFont("Helvetica", 7)
+    c.setFont("Helvetica", 12)
     for line in address_lines[:3]:
         c.setFillColor(colors.HexColor("#444441"))
         c.drawString(info_x, addr_y, line)
@@ -336,7 +349,7 @@ def generate_label_pdf(
     c.drawString(PADDING, y, "ITEMS")
     y -= 5 * mm
 
-    font_name, font_size = _cjk_font(8)
+    font_name, font_size = _cjk_font(12)
     c.setFont(font_name, font_size)
     for item_line in item_lines:
         c.setFillColor(colors.HexColor("#444441"))

@@ -139,6 +139,11 @@ def _run_print_retry_job() -> None:
 
         logger.info(f"[Scheduler] Printer online — retrying {len(failed_prints)} failed label(s).")
 
+        # Mark all as "printing" immediately to prevent duplicate submissions
+        for order in failed_prints:
+            order.label_printed = "printing"
+        db.commit()
+
         success = 0
         for order in failed_prints:
             result = print_shipping_label(order)
@@ -150,8 +155,7 @@ def _run_print_retry_job() -> None:
             else:
                 order.label_printed = "failed"
                 order.label_print_error = result.get("reason")
-
-        db.commit()
+            db.commit()
 
         if success > 0:
             logger.info(f"[Scheduler] Print retry complete — {success}/{len(failed_prints)} succeeded.")

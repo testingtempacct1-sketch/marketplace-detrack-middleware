@@ -295,6 +295,98 @@ def extract_detrack_webhook_info(payload: dict) -> dict:
 
 def update_delivery_status_from_detrack(db: Session, payload: dict) -> dict:
     info = extract_detrack_webhook_info(payload)
+    
+    # Auto-print Shopee labels when job is created (info_recv)
+    do_number = info.get("do_number", "")
+    status = info.get("status", "")
+
+    if status == "info_recv" and do_number.upper().startswith("SP"):
+        try:
+            from app.detrack_client import get_detrack_job
+            from app.label_generator import generate_label_pdf
+            from app.printnode_client import print_label
+            from app.telegram_client import send_print_failure_alert
+            import logging
+            
+            job_id = info.get("job_id")
+            import logging as _log2
+            _log2.info(f"[Shopee Debug] Fetching job_id={job_id} for do_number={do_number}")
+            job_data = get_detrack_job(job_id) or {}
+            _log2.info(f"[Shopee Debug] job_data keys: {list(job_data.keys()) if job_data else 'EMPTY'}")
+            
+            customer_name = job_data.get("deliver_to_collect_from") or job_data.get("deliver_to") or "Shopee Customer"
+            import logging as _log
+            _log.info(f"[Shopee Debug] job_id={job_id}, customer={customer_name}, address={job_data.get('address')}, items_count={len(job_data.get('items') or [])}")
+            phone = job_data.get("phone_number") or ""
+            address = job_data.get("address") or ""
+            postal_code = job_data.get("postal_code") or None
+            remarks = job_data.get("instructions") or None
+            delivery_date = job_data.get("date") or None
+            raw_items = job_data.get("items") or []
+            items = [{"description": i.get("description") or "Item", "quantity": i.get("quantity") or 1} for i in raw_items] or [{"description": "Shopee Order", "quantity": 1}]
+            
+            
+            # Save to DB
+            import json as json_module
+            from datetime import datetime
+            items_json = json_module.dumps([{"name": i.get("description") or "Item", "quantity": i.get("quantity") or 1} for i in raw_items])
+            order_sync = OrderSync(
+                source="shopee",
+                source_order_id=do_number,
+                shopify_order_id=None,
+                shopify_order_name=None,
+                customer_name=customer_name,
+                phone=phone,
+                address=address,
+                postal_code=postal_code,
+                items_json=items_json,
+                remarks=remarks,
+                delivery_date=delivery_date,
+                detrack_do_number=do_number,
+                detrack_job_id=job_id,
+                sync_status="sent_to_detrack",
+                delivery_status="info_recv",
+                label_printed="printing",
+                retry_count=0,
+            )
+            db.add(order_sync)
+            db.commit()
+            db.refresh(order_sync)
+
+            # Generate and print label
+            pdf_bytes = generate_label_pdf(
+                do_number=do_number,
+                source="shopee",
+                customer_name=customer_name,
+                phone=phone,
+                address=address,
+                postal_code=postal_code,
+                items=items,
+                remarks=remarks,
+                delivery_date=delivery_date,
+            )
+            
+            print_result = print_label(pdf_bytes, title=f"Shopee Label — {do_number}")
+
+            if print_result.get("printed"):
+                order_sync.label_printed = "printed"
+                logging.info(f"[Shopee] Auto-printed label for {do_number}")
+            else:
+                order_sync.label_printed = "failed"
+                order_sync.label_print_error = print_result.get("reason")
+                logging.error(f"[Shopee] Print failed for {do_number}: {print_result.get('reason')}")
+                send_print_failure_alert(
+                    order_sync_id=order_sync.id,
+                    source="shopee",
+                    source_order_id=do_number,
+                    detrack_do_number=do_number,
+                    error=print_result.get("reason", "Unknown error"),
+                )
+            db.commit()
+        except Exception as exc:
+            logging.error(f"[Shopee] Auto-print error for {do_number}: {exc}")
+        
+        return {"received": True, "shopee_auto_print": True, "do_number": do_number}
 
     do_number = info["do_number"]
     job_id = info["job_id"]
@@ -530,6 +622,9 @@ def create_order_and_send_to_detrack(db: Session, order: StandardOrder) -> dict:
         try:
             from app.printnode_client import print_shipping_label
             from app.telegram_client import send_print_failure_alert
+            # Mark as "printing" immediately to prevent duplicate submissions
+            order_sync.label_printed = "printing"
+            db.commit()
             print_result = print_shipping_label(order_sync)
 
             if print_result.get("printed"):

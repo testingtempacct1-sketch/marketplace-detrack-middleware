@@ -119,36 +119,6 @@ def print_label(pdf_bytes: bytes, title: str = "Shipping Label") -> dict:
         job_id = response.json()
         logger.info(f"[PrintNode] Print job created: {job_id} — {title}")
 
-        # Verify job was actually sent to printer (not stuck in "new" state)
-        import time
-        time.sleep(5)  # Wait 5 seconds for PrintNode to process
-
-        try:
-            job_response = requests.get(
-                f"{PRINTNODE_API_URL}/printjobs/{job_id}",
-                auth=(settings.printnode_api_key, ""),
-                timeout=10,
-            )
-
-            if job_response.status_code == 200:
-                job_data = job_response.json()
-                # Handle list response
-                if isinstance(job_data, list):
-                    job_data = job_data[0] if job_data else {}
-
-                state = job_data.get("state", "")
-                logger.info(f"[PrintNode] Job {job_id} state: {state}")
-
-                if state == "new":
-                    # Job still in "new" state — PrintNode client not connected
-                    error_msg = "PrintNode client not connected — laptop may be off"
-                    logger.error(f"[PrintNode] {error_msg}")
-                    return {"printed": False, "reason": error_msg, "job_id": job_id}
-
-        except Exception as verify_exc:
-            logger.warning(f"[PrintNode] Could not verify job state: {verify_exc}")
-            # Don't fail — assume printed if we can't verify
-
         return {
             "printed": True,
             "job_id": job_id,

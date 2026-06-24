@@ -1036,7 +1036,7 @@ function renderSearchTable(orders) {
     <tr>
       <td class="mono">#${o.id}</td>
       <td>${sourceBadge(o.source)}</td>
-      <td class="mono">${o.source_order_id || '—'}</td>
+      <td class="mono">${getOrderRef(o)}</td>
       <td>${o.customer_name || '—'}</td>
       <td class="mono">${o.detrack_do_number || '—'}</td>
       <td>${statusBadge(o.sync_status)}</td>
@@ -1119,7 +1119,7 @@ function renderFailedTable(orders) {
     <tr>
       <td class="mono">#${o.id}</td>
       <td>${sourceBadge(o.source)}</td>
-      <td class="mono">${o.source_order_id || '—'}</td>
+      <td class="mono">${getOrderRef(o)}</td>
       <td>${o.customer_name || '—'}</td>
       <td class="mono">${o.detrack_do_number || '—'}</td>
       <td>${statusBadge(o.sync_status)}</td>
@@ -1198,7 +1198,7 @@ function renderRecentTable(orders) {
     <tr>
       <td class="mono">#${o.id}</td>
       <td>${sourceBadge(o.source)}</td>
-      <td class="mono">${o.source_order_id || '—'}</td>
+      <td class="mono">${getOrderRef(o)}</td>
       <td>${o.customer_name || '—'}</td>
       <td>${detrackLink(o.detrack_do_number, o.delivery_date, o.created_at)}</td>
       <td>${statusBadge(o.sync_status)}</td>
@@ -1328,6 +1328,15 @@ function printBadge(status) {
   if (status === 'failed') return `<span class="badge badge-red">🖨 FAILED</span>`;
   if (status === 'skipped') return `<span class="badge badge-gray">SKIPPED</span>`;
   return `<span class="badge badge-gray">${status}</span>`;
+}
+
+function getOrderRef(o) {
+  if (o.source && o.source.includes('tiktok')) {
+    const match = (o.remarks || '').match(/TikTok Order ID[:\s]*(\d+)/i);
+    if (match) return match[1];
+  }
+  if (o.shopify_order_name) return o.shopify_order_name;
+  return o.source_order_id || '—';
 }
 
 function sourceBadge(source) {

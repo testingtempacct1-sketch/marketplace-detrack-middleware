@@ -83,6 +83,20 @@ def shopify_order_to_standard(payload: dict) -> StandardOrder:
     else:
         source = "shopify"
 
+    # Extract TikTok Order ID from tags if not in note
+    tiktok_order_id = None
+    if source == "tiktok_shop":
+        # Try from note first
+        import re
+        match = re.search(r"TikTok Order ID[:\s]*(\d+)", note, re.IGNORECASE)
+        if match:
+            tiktok_order_id = match.group(1)
+        else:
+            # Try from tags
+            tag_match = re.search(r"TikTokOrderID[:\s]*(\d+)", tags, re.IGNORECASE)
+            if tag_match:
+                tiktok_order_id = tag_match.group(1)
+
     return StandardOrder(
         source=source,
         source_order_id=order_id,
@@ -92,6 +106,6 @@ def shopify_order_to_standard(payload: dict) -> StandardOrder:
         address=address,
         postal_code=postal_code,
         items=items,
-        remarks=f"Shopify order {order_name}. {note}".strip(),
+        remarks=f"Shopify order {order_name}. {'TikTok Order ID:' + tiktok_order_id + '. ' if tiktok_order_id and 'TikTok Order ID' not in note else ''}{note}".strip(),
         delivery_date=None,
     )
