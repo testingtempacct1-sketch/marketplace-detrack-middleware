@@ -185,7 +185,7 @@ def generate_label_pdf(
     # Ensure CJK font is registered
     _ensure_cjk_font()
     # Start with fixed sections and add dynamic content
-    address_lines = _wrap_text(address or "", 35)
+    address_lines = _wrap_text(address or "", 28)
     item_lines = []
     for item in (items or []):
         name = item.get("description") or item.get("name") or "Item"
